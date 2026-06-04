@@ -11,24 +11,23 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.Instant;
 
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "users")
-@EntityListeners(AuditingEntityListener.class)
+@Table(name = "user_genres", uniqueConstraints = @UniqueConstraint(name = "uq_user_genre_id", columnNames = {"user_id", "genre_id"}))
 @Entity
+@EntityListeners(AuditingEntityListener.class)
 @Getter
-public class User {
+public class UserGenre {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "user_id")
+    @Column(name = "user_genre_id")
     private Long id;
 
-    @Column(unique = true, nullable = false)
-    private String email;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false, updatable = false)
+    private User user;
 
-    @Column(unique = true, nullable = false, length = 20)
-    private String nickname;
-
-    @Column(name = "is_onboarding_complete", nullable = false)
-    private Boolean isOnboardingComplete = false;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "genre_id", nullable = false, updatable = false)
+    private Genre genre;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -38,6 +37,12 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    @Column(name = "deleted_at")
-    private Instant deletedAt;
+    private UserGenre(User user, Genre genre) {
+        this.user = user;
+        this.genre = genre;
+    }
+
+    public static UserGenre create(User user, Genre genre) {
+        return new UserGenre(user, genre);
+    }
 }

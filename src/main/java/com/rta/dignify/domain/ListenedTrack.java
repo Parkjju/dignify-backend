@@ -11,24 +11,23 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.Instant;
 
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "users")
-@EntityListeners(AuditingEntityListener.class)
+@Table(name = "listened_tracks")
 @Entity
+@EntityListeners(AuditingEntityListener.class)
 @Getter
-public class User {
+public class ListenedTrack {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "user_id")
+    @Column(name = "listened_track_id")
     private Long id;
 
-    @Column(unique = true, nullable = false)
-    private String email;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "track_id", nullable = false, updatable = false)
+    private Track track;
 
-    @Column(unique = true, nullable = false, length = 20)
-    private String nickname;
-
-    @Column(name = "is_onboarding_complete", nullable = false)
-    private Boolean isOnboardingComplete = false;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false, updatable = false)
+    private User user;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -38,6 +37,12 @@ public class User {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
-    @Column(name = "deleted_at")
-    private Instant deletedAt;
+    private ListenedTrack(User user, Track track) {
+        this.user = user;
+        this.track = track;
+    }
+
+    public static ListenedTrack create(User user, Track track) {
+        return new ListenedTrack(user, track);
+    }
 }
