@@ -4,18 +4,12 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
-
-import java.time.Instant;
 
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "listened_tracks")
 @Entity
-@EntityListeners(AuditingEntityListener.class)
 @Getter
-public class ListenedTrack {
+public class ListenedTrack extends BaseTimeEntity {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "listened_track_id")
@@ -28,14 +22,6 @@ public class ListenedTrack {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false, updatable = false)
     private User user;
-
-    @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @LastModifiedDate
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt;
 
     private ListenedTrack(User user, Track track) {
         this.user = user;

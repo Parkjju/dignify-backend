@@ -4,18 +4,14 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
 
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "tracks", uniqueConstraints = @UniqueConstraint(name = "uq_external_source", columnNames = {"external_id", "source"}))
 @Entity
-@EntityListeners(AuditingEntityListener.class)
 @Getter
-public class Track {
+public class Track extends BaseTimeEntity {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "track_id")
@@ -58,14 +54,6 @@ public class Track {
 
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
-
-    @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @LastModifiedDate
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt;
 
     private Track(String externalId, String artistName, String collectionName, String trackName, String previewUrl, String trackViewUrl, String artworkUrl, Instant releaseDate, Genre genre, String country, String source) {
         this.externalId = externalId;

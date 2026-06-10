@@ -4,18 +4,14 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
 
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "users")
-@EntityListeners(AuditingEntityListener.class)
 @Entity
 @Getter
-public class User {
+public class User extends BaseTimeEntity  {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "user_id")
@@ -29,14 +25,6 @@ public class User {
 
     @Column(name = "is_onboarding_complete", nullable = false)
     private Boolean isOnboardingComplete = false;
-
-    @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @LastModifiedDate
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt;
 
     @Column(name = "deleted_at")
     private Instant deletedAt;

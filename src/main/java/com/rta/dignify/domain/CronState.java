@@ -2,17 +2,11 @@ package com.rta.dignify.domain;
 
 import jakarta.persistence.*;
 import lombok.Getter;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
-
-import java.time.Instant;
 
 @Entity
 @Table(name = "cron_state")
-@EntityListeners(AuditingEntityListener.class)
 @Getter
-public class CronState {
+public class CronState extends BaseTimeEntity {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "job_id")
@@ -23,12 +17,4 @@ public class CronState {
 
     @Column(name = "last_processed_id")
     private Long lastProcessedId;
-
-    @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @LastModifiedDate
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt;
 }

@@ -4,18 +4,12 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
-
-import java.time.Instant;
 
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "user_auth", uniqueConstraints = { @UniqueConstraint(name = "uq_provider_user_id", columnNames = {"provider", "provider_user_id"})})
 @Entity
-@EntityListeners(AuditingEntityListener.class)
 @Getter
-public class UserAuth {
+public class UserAuth extends BaseTimeEntity {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "user_auth_id")
@@ -30,14 +24,6 @@ public class UserAuth {
 
     @Column(name = "provider_user_id", nullable = false)
     private String providerUserId;
-
-    @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @LastModifiedDate
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt;
 
     private UserAuth(User user, String provider, String providerUserId) {
         this.user = user;

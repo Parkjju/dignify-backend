@@ -4,18 +4,13 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.annotation.LastModifiedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
-
 import java.time.Instant;
 
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@EntityListeners(AuditingEntityListener.class)
 @Table(name = "user_tokens")
 @Entity
 @Getter
-public class UserToken {
+public class UserToken extends BaseTimeEntity  {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "token_id")
@@ -31,14 +26,6 @@ public class UserToken {
 
     @Column(name = "expires_at", nullable = false, updatable = false)
     private Instant expiresAt;
-
-    @CreatedDate
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @LastModifiedDate
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt;
 
     private UserToken(User user, String refreshTokenHash, Instant expiresAt) {
         this.user = user;
