@@ -14,8 +14,11 @@ public enum ErrorCode {
     AUTH_TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED,  "인증 정보가 만료되었습니다."),
     AUTH_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다."),
 
-    // 500 common domain
-    INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 에러가 발생했습니다.");
+    // common domain
+    INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 에러가 발생했습니다."),
+    METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "요청 메서드가 잘못되었습니다."),
+    METHOD_ARGUMENT_NOT_VALID(HttpStatus.BAD_REQUEST, "요청 메서드 입력값이 잘못되었습니다."),
+    DATA_INTEGRITY_VIOLATION(HttpStatus.CONFLICT, "데이터 입력 시 충돌이 발생했습니다.");
 
     private final HttpStatus httpStatus;
     private final String message;
