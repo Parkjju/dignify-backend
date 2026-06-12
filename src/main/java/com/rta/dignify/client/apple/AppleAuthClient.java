@@ -30,9 +30,9 @@ import java.util.List;
 public class AppleAuthClient {
     private JWKSource<SecurityContext> jwkSource;
 
-    private static final String keyAddress = "https://appleid.apple.com/auth/keys";
-    private static final String appleHost = "https://appleid.apple.com";
-    private static final String appId = "parkjju.dignify";
+    private static final String KEY_ADDRESS = "https://appleid.apple.com/auth/keys";
+    private static final String APPLE_HOST = "https://appleid.apple.com";
+    private static final String APP_ID = "parkjju.dignify";
 
     /**
      * 아래 두 예외는 빈 생성 오류로 application 생성 레벨에서 예외 발생하는 것을 의도
@@ -43,7 +43,7 @@ public class AppleAuthClient {
      */
     @PostConstruct
     public void init() throws URISyntaxException, MalformedURLException {
-        URL url = new URI(keyAddress).toURL();
+        URL url = new URI(KEY_ADDRESS).toURL();
         this.jwkSource = JWKSourceBuilder.<SecurityContext>create(url)
                 .cache(Duration.ofDays(1).toMillis(), JWKSourceBuilder.DEFAULT_CACHE_REFRESH_TIMEOUT)
                 .build();
@@ -81,13 +81,13 @@ public class AppleAuthClient {
 
             JWTClaimsSet jwtClaimsSet = signedJWT.getJWTClaimsSet();
 
-            if (!appleHost.equals(jwtClaimsSet.getIssuer())) {
+            if (!APPLE_HOST.equals(jwtClaimsSet.getIssuer())) {
                 log.warn("Identity Token iss 불일치");
                 throw new BusinessException(ErrorCode.AUTH_IDENTITY_TOKEN_INVALID);
             }
 
             List<String> aud = jwtClaimsSet.getAudience();
-            if (aud == null || !aud.contains(appId)) {
+            if (aud == null || !aud.contains(APP_ID)) {
                 log.warn("Identity Token appId 불일치");
                 throw new BusinessException(ErrorCode.AUTH_IDENTITY_TOKEN_INVALID);
             }
