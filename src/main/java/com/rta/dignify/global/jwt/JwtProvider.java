@@ -8,6 +8,7 @@ import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
+import lombok.Getter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -21,9 +22,11 @@ public class JwtProvider {
     @Value("${jwt.secret}")
     private String jwtSecret;
 
+    @Getter
     @Value("${jwt.access-token-expiration}")
     private long accessTokenExpiration;
 
+    @Getter
     @Value("${jwt.refresh-token-expiration}")
     private long refreshTokenExpiration;
 

@@ -28,4 +28,13 @@ public class User extends BaseTimeEntity  {
 
     @Column(name = "deleted_at")
     private Instant deletedAt;
+
+    private User(String email, String nickname) {
+        this.email = email;
+        this.nickname = nickname;
+    }
+
+    public static User create(String email, String nickname) {
+        return new User(email, nickname);
+    }
 }
