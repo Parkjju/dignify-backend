@@ -108,6 +108,12 @@ public class AuthService {
         return new AuthTokenResponse(newRefreshToken, newAccessToken, accessTokenExpiresAt);
     }
 
+    @Transactional(readOnly = false)
+    public void logout(String refreshToken) {
+        String hashedRefreshToken = TokenHasher.hash(refreshToken);
+        userTokenRepository.deleteUserTokenByRefreshTokenHash(hashedRefreshToken);
+    }
+
     private String generateUniqueNickname() {
         String nickname;
         do {
