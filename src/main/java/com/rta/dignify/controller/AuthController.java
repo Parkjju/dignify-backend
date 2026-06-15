@@ -32,4 +32,9 @@ public class AuthController {
     public void logout(@RequestBody @Valid AuthTokenRequest authTokenRequest) {
         authService.logout(authTokenRequest.refreshToken());
     }
+
+    @PostMapping("/withdraw")
+    public void withdraw(@RequestBody @Valid AuthTokenRequest authTokenRequest) {
+        authService.withdraw(authTokenRequest.refreshToken());
+    }
 }

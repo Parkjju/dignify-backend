@@ -23,7 +23,6 @@ import java.util.UUID;
 
 @RequiredArgsConstructor
 @Service
-@Transactional(readOnly = true)
 public class AuthService {
 
     private final UserAuthRepository userAuthRepository;
@@ -42,29 +41,30 @@ public class AuthService {
      * @param identityToken Apple 로그인 IdentityToken
      * @return accessToken, refreshToken, 액세스 토큰 만료시간
      */
-    @Transactional(readOnly = false)
+    @Transactional
     public AuthTokenResponse signInWithApple(String identityToken) {
         AppleIdentity appleIdentity = appleAuthClient.verifyIdentityToken(identityToken);
         String email = appleIdentity.email();
         String appleId = appleIdentity.appleId();
 
-        Optional<UserAuth> userAuth = userAuthRepository.findByProviderAndProviderUserId(PROVIDER.APPLE.name(), appleId);
+        Optional<User> findingUser = userAuthRepository.findUserByProviderAndProviderUserId(PROVIDER.APPLE.name(), appleId);
+
         User user;
 
         // 1. 애플 프로바이더 기준 유저가 존재하지 않는경우 회원가입
         // 2. 존재하는 경우 로그인
-        if (userAuth.isEmpty()) {
-            // 랜덤 닉네임 생성
-            String nickname = generateUniqueNickname();
-
-            user = User.create(email, nickname);
-            userRepository.save(user);
-
-            UserAuth newUserAuth = UserAuth.create(user, PROVIDER.APPLE.name(), appleId);
-            userAuthRepository.save(newUserAuth);
+        if (findingUser.isEmpty()) {
+            user = saveNewUserAndAuth(email, appleId);
         } else {
-            // User 조회쿼리 수행 X, 프록시로부터 id값만 반환받음
-            user = userAuth.get().getUser();
+            user = findingUser.get();
+            // 삭제된 유저가 apple login으로 재가입
+            // soft delete 데이터 전체 삭제 후 가입처리
+            if (user.getDeletedAt() != null) {
+                userRepository.delete(user);
+                userRepository.flush();
+
+                user = saveNewUserAndAuth(email, appleId);
+            }
         }
 
         String accessToken = jwtProvider.generateAccessToken(user.getId());
@@ -85,7 +85,7 @@ public class AuthService {
      * @return 갱신된 리프레시 토큰
      * @throws BusinessException 401
      */
-    @Transactional(readOnly = false)
+    @Transactional
     public AuthTokenResponse refreshToken(String refreshToken) {
         jwtProvider.validateToken(refreshToken);
         // refresh token 기준으로 DB 조회
@@ -108,10 +108,47 @@ public class AuthService {
         return new AuthTokenResponse(newRefreshToken, newAccessToken, accessTokenExpiresAt);
     }
 
-    @Transactional(readOnly = false)
+    /**
+     *
+     * @param refreshToken UserToken 엔티티 조회를 위한 리프레시 토큰값
+     */
+    @Transactional
     public void logout(String refreshToken) {
         String hashedRefreshToken = TokenHasher.hash(refreshToken);
         userTokenRepository.deleteUserTokenByRefreshTokenHash(hashedRefreshToken);
+    }
+
+    /**
+     *
+     * @param refreshToken UserToken 엔티티 조회를 위한 리프레시 토큰
+     */
+    @Transactional
+    public void withdraw(String refreshToken) {
+        String hashedRefreshToken = TokenHasher.hash(refreshToken);
+
+        // throw BusinessException - DB상의 expiresAt 컬럼으로 인해 USER_TOKEN 테이블에서 정리된 케이스
+        UserToken userToken = userTokenRepository.findUserTokenByRefreshTokenHash(hashedRefreshToken)
+                .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_TOKEN_INVALID));
+        User user = userToken.getUser();
+
+        // 멀티 디바이스 고려하여 userID 기준 모든 토큰 정보 삭제
+        userTokenRepository.deleteAllByUser(user);
+
+        // 토큰정보 삭제 후 유저 SOFT DELETE
+        user.deleteUser();
+    }
+
+    private User saveNewUserAndAuth(String email, String appleId) {
+        // 랜덤 닉네임 생성
+        String nickname = generateUniqueNickname();
+
+        User user = User.create(email, nickname);
+        userRepository.save(user);
+
+        UserAuth newUserAuth = UserAuth.create(user, PROVIDER.APPLE.name(), appleId);
+        userAuthRepository.save(newUserAuth);
+
+        return user;
     }
 
     private String generateUniqueNickname() {

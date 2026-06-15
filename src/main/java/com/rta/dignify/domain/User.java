@@ -38,4 +38,8 @@ public class User extends BaseTimeEntity {
     public static User create(String email, String nickname) {
         return new User(email, nickname);
     }
+
+    public void deleteUser() {
+        this.deletedAt = Instant.now();
+    }
 }
