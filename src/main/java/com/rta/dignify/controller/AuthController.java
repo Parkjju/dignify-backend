@@ -1,6 +1,7 @@
 package com.rta.dignify.controller;
 
 import com.rta.dignify.dto.auth.AppleSignInRequest;
+import com.rta.dignify.dto.auth.AuthTokenRequest;
 import com.rta.dignify.dto.auth.AuthTokenResponse;
 import com.rta.dignify.service.AuthService;
 import jakarta.validation.Valid;
@@ -20,5 +21,10 @@ public class AuthController {
     @PostMapping("/apple")
     public AuthTokenResponse signInWithApple(@RequestBody @Valid AppleSignInRequest appleSignInRequest) {
         return authService.signInWithApple(appleSignInRequest.identityToken());
+    }
+
+    @PostMapping("/refresh")
+    public AuthTokenResponse refreshToken(@RequestBody @Valid AuthTokenRequest authTokenRequest) {
+        return authService.refreshToken(authTokenRequest.refreshToken());
     }
 }

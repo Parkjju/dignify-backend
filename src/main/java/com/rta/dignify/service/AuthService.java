@@ -6,6 +6,8 @@ import com.rta.dignify.domain.UserAuth;
 import com.rta.dignify.domain.UserToken;
 import com.rta.dignify.dto.auth.AppleIdentity;
 import com.rta.dignify.dto.auth.AuthTokenResponse;
+import com.rta.dignify.global.exception.BusinessException;
+import com.rta.dignify.global.exception.ErrorCode;
 import com.rta.dignify.global.jwt.JwtProvider;
 import com.rta.dignify.global.util.TokenHasher;
 import com.rta.dignify.repository.UserAuthRepository;
@@ -75,6 +77,35 @@ public class AuthService {
         userTokenRepository.save(userToken);
 
         return new AuthTokenResponse(refreshToken, accessToken, accessTokenExpiresAt);
+    }
+
+    /**
+     *
+     * @param refreshToken 유저 리프레시 토큰
+     * @return 갱신된 리프레시 토큰
+     * @throws BusinessException 401
+     */
+    @Transactional(readOnly = false)
+    public AuthTokenResponse refreshToken(String refreshToken) {
+        jwtProvider.validateToken(refreshToken);
+        // refresh token 기준으로 DB 조회
+        String hashedRefreshToken = TokenHasher.hash(refreshToken);
+
+        // throw BusinessException - DB상의 expiresAt 컬럼으로 인해 USER_TOKEN 테이블에서 정리된 케이스
+        UserToken userToken = userTokenRepository.findUserTokenByRefreshTokenHash(hashedRefreshToken)
+                .orElseThrow(() -> new BusinessException(ErrorCode.AUTH_TOKEN_INVALID));
+
+        String newRefreshToken = jwtProvider.generateRefreshToken(userToken.getUser().getId());
+        String newAccessToken = jwtProvider.generateAccessToken(userToken.getUser().getId());
+        Instant refreshTokenExpiresAt = Instant.now().plusMillis(jwtProvider.getRefreshTokenExpiration());
+        Instant accessTokenExpiresAt = Instant.now().plusMillis(jwtProvider.getAccessTokenExpiration());
+
+        String hashedNewRefreshToken = TokenHasher.hash(newRefreshToken);
+
+        // 리프레시 토큰 및 만료시각 갱신 (sliding token)
+        userToken.rotate(hashedNewRefreshToken, refreshTokenExpiresAt);
+
+        return new AuthTokenResponse(newRefreshToken, newAccessToken, accessTokenExpiresAt);
     }
 
     private String generateUniqueNickname() {

@@ -26,7 +26,7 @@ public class UserToken extends BaseTimeEntity  {
     @Column(name = "refresh_token_hash", nullable = false, length = 64, unique = true)
     private String refreshTokenHash;
 
-    @Column(name = "expires_at", nullable = false, updatable = false)
+    @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
     private UserToken(User user, String refreshTokenHash, Instant expiresAt) {
@@ -37,5 +37,15 @@ public class UserToken extends BaseTimeEntity  {
 
     public static UserToken create(User user, String refreshTokenHash, Instant expiresAt) {
         return new UserToken(user, refreshTokenHash, expiresAt);
+    }
+
+    /**
+     *
+     * @param newRefreshTokenHash 갱신된 리프레시 토큰
+     * @param newExpiresAt 갱신된 만료 시각
+     */
+    public void rotate(String newRefreshTokenHash, Instant newExpiresAt) {
+        this.refreshTokenHash = newRefreshTokenHash;
+        this.expiresAt = newExpiresAt;
     }
 }
