@@ -7,14 +7,15 @@ import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "users")
 @Entity
 @Getter
-public class User extends BaseTimeEntity  {
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class User extends BaseTimeEntity {
 
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id
     @Column(name = "user_id")
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(unique = true, nullable = false)

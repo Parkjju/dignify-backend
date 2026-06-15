@@ -1,6 +1,9 @@
 package com.rta.dignify.client.apple;
 
-import com.nimbusds.jose.*;
+import com.nimbusds.jose.Algorithm;
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSVerifier;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jose.jwk.*;
 import com.nimbusds.jose.jwk.source.JWKSource;

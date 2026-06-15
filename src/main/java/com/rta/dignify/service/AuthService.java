@@ -19,9 +19,9 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
-@Transactional(readOnly = true)
-@Service
 @RequiredArgsConstructor
+@Service
+@Transactional(readOnly = true)
 public class AuthService {
 
     private final UserAuthRepository userAuthRepository;

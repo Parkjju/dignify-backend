@@ -8,7 +8,7 @@ public class TokenHasher {
 
     /**
      * 토큰을 SHA-256으로 해싱해 64자 16진수 문자열로 반환한다.
-     *
+     * <p>
      * 1. SHA-256 MessageDigest 인스턴스 획득
      * 2. 토큰 문자열을 UTF-8 바이트 배열로 변환
      * 3. 바이트 배열의 SHA-256 해시값(32바이트) 계산

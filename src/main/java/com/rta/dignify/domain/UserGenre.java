@@ -5,14 +5,15 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "user_genres", uniqueConstraints = @UniqueConstraint(name = "uq_user_genre_id", columnNames = {"user_id", "genre_id"}))
 @Entity
 @Getter
-public class UserGenre extends BaseTimeEntity  {
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class UserGenre extends BaseTimeEntity {
 
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id
     @Column(name = "user_genre_id")
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)

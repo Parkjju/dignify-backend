@@ -10,15 +10,15 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
 
-@MappedSuperclass
 @EntityListeners(AuditingEntityListener.class)
+@MappedSuperclass
 @Getter
 public class BaseTimeEntity {
-    @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
+    @CreatedDate
     private Instant createdAt;
 
-    @LastModifiedDate
     @Column(name = "updated_at", nullable = false)
+    @LastModifiedDate
     private Instant updatedAt;
 }

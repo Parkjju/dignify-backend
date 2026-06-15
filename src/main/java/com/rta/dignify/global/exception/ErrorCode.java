@@ -11,7 +11,7 @@ public enum ErrorCode {
     USER_NICKNAME_INVALID(HttpStatus.BAD_REQUEST, "유효하지 않은 닉네임입니다."),
 
     // Auth domain
-    AUTH_TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED,  "인증 정보가 만료되었습니다."),
+    AUTH_TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED, "인증 정보가 만료되었습니다."),
     AUTH_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다."),
     AUTH_IDENTITY_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않은 identity 토큰입니다."),
     AUTH_IDENTITY_TOKEN_ALGORITHM_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않은 identity 토큰 알고리즘입니다."),

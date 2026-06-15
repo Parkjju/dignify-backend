@@ -7,14 +7,15 @@ import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "tracks", uniqueConstraints = @UniqueConstraint(name = "uq_external_source", columnNames = {"external_id", "source"}))
 @Entity
 @Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Track extends BaseTimeEntity {
 
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id
     @Column(name = "track_id")
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(name = "external_id", nullable = false)

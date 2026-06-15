@@ -3,13 +3,14 @@ package com.rta.dignify.domain;
 import jakarta.persistence.*;
 import lombok.Getter;
 
-@Entity
 @Table(name = "cron_state")
+@Entity
 @Getter
 public class CronState extends BaseTimeEntity {
 
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id
     @Column(name = "job_id")
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(name = "job_name", nullable = false, unique = true)

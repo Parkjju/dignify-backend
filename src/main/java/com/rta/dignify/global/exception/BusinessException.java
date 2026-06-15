@@ -9,7 +9,7 @@ public class BusinessException extends RuntimeException {
     /**
      *
      * @param errorCode 에러 코드, e.errorCode.getMessage로 이미 정의된 고정 에러메시지 출력 가능
-     * @param detail BusinessException 생성 후 예외를 던질때 정의해야 하는 메시지값, BusinessException e.getMessage로 접근 가능
+     * @param detail    BusinessException 생성 후 예외를 던질때 정의해야 하는 메시지값, BusinessException e.getMessage로 접근 가능
      */
     public BusinessException(ErrorCode errorCode, String detail) {
         super(detail);
