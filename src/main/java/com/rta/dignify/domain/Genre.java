@@ -21,4 +21,13 @@ public class Genre extends BaseTimeEntity {
 
     @Column(name = "genre_name_ko", nullable = false, unique = true)
     private String genreNameKo;
+
+    private Genre(String genreNameEn, String genreNameKo) {
+        this.genreNameEn = genreNameEn;
+        this.genreNameKo = genreNameKo;
+    }
+
+    public static Genre create(String genreNameEn, String genreNameKo) {
+        return new Genre(genreNameEn, genreNameKo);
+    }
 }
