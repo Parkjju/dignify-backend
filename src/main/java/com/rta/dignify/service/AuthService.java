@@ -61,8 +61,6 @@ public class AuthService {
             // soft delete 데이터 전체 삭제 후 가입처리
             if (user.getDeletedAt() != null) {
                 userRepository.delete(user);
-                userRepository.flush();
-
                 user = saveNewUserAndAuth(email, appleId);
             }
         }

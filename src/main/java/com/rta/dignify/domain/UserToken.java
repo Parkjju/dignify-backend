@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 
 import java.time.Instant;
 
@@ -20,6 +22,7 @@ public class UserToken extends BaseTimeEntity  {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", updatable = false, nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private User user;
 
     // SHA-256으로 리프레시 토큰 해시 후 저장 -> length 64로 고정

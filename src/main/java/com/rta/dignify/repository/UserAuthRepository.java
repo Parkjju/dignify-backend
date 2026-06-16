@@ -8,6 +8,6 @@ import org.springframework.data.jpa.repository.Query;
 import java.util.Optional;
 
 public interface UserAuthRepository extends JpaRepository<UserAuth, Long> {
-    @Query("SELECT ua.user FROM UserAuth ua JOIN FETCH ua.user WHERE ua.provider = :provider AND ua.providerUserId = :providerUserId")
+    @Query("SELECT ua.user FROM UserAuth ua JOIN ua.user WHERE ua.provider = :provider AND ua.providerUserId = :providerUserId")
     Optional<User> findUserByProviderAndProviderUserId(String provider, String providerUserId);
 }
