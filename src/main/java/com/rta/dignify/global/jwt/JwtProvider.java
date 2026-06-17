@@ -9,13 +9,16 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.util.Date;
 
+@RequiredArgsConstructor
 @Component
 public class JwtProvider {
 
@@ -32,8 +35,12 @@ public class JwtProvider {
 
     private SecretKey secretKey;
 
+    private final Clock clock;
+
     /**
-     * 빈 생성 및 의존성 주입 직후 JWT 시크릿 키값을 JJWT 라이브러리에서 인식 가능한 SecretKey 객체 형태로 생성
+     * 생성자 호출 시점에 @Value 필드 주입 속성을 사용하는 경우 빈 인스턴스 초기화 이전이므로 NPE 발생함
+     * PostConstruct 시점에는 @Value 필드 주입이 완료된 상태
+     * Value 주입을 마친 뒤 secretKey를 초기화하는 방식
      */
     @PostConstruct
     public void init() {
@@ -49,7 +56,7 @@ public class JwtProvider {
     }
 
     private String generateToken(Long userId, long expiration) {
-        Date now = new Date();
+        Date now = Date.from(clock.instant());
         return Jwts.builder()
                 .subject(String.valueOf(userId))
                 .issuedAt(now)
@@ -67,10 +74,9 @@ public class JwtProvider {
         return Long.valueOf(claims.getSubject());
     }
 
-    public boolean validateToken(String token) {
+    public void validateToken(String token) {
         try {
             Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token);
-            return true;
         } catch (ExpiredJwtException e) {
             throw new BusinessException(ErrorCode.AUTH_TOKEN_EXPIRED);
         } catch (JwtException e) {
