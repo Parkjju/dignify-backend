@@ -2,20 +2,29 @@ package com.rta.dignify.service.auth;
 
 import com.rta.dignify.client.apple.AppleAuthClient;
 import com.rta.dignify.domain.User;
+import com.rta.dignify.domain.UserToken;
 import com.rta.dignify.dto.auth.AppleIdentity;
 import com.rta.dignify.dto.auth.AuthTokenResponse;
+import com.rta.dignify.global.exception.BusinessException;
+import com.rta.dignify.global.exception.ErrorCode;
 import com.rta.dignify.global.jwt.JwtProvider;
+import com.rta.dignify.global.util.TokenHasher;
 import com.rta.dignify.repository.UserRepository;
 import com.rta.dignify.repository.UserTokenRepository;
 import com.rta.dignify.service.AuthService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 
@@ -80,5 +89,52 @@ class AuthServiceIntegrationTest {
         assertThat(userTokenRepository.findAll().size()).isEqualTo(1);
         assertThat(reLoginUser.refreshToken()).isNotNull();
         assertThat(reLoginUser.accessToken()).isNotNull();
+    }
+
+    // 1. testToken으로 refreshToken 호출 - DB에 매칭되는 UserToken 없어 AUTH_TOKEN_INVALID 발생
+    // 2. hashedRefreshTestToken1로 UserToken 엔티티 생성 및 저장 (DB 조회 성공 케이스 준비)
+    // 3. testToken으로 refreshToken 재호출
+    //  - TokenHasher.hash(testToken) -> hashedRefreshTestToken1로 기존 row 조회 성공
+    //  - jwtProvider로 새 access/refresh 토큰 발급
+    //  - TokenHasher.hash(generatedRefreshToken) -> hashedRefreshTestToken2
+    //  - rotate()로 기존 row 갱신 (새 row 생성 아님)
+    // 4. row 개수 1개 유지 + 마지막 row의 hash가 hashedRefreshTestToken2인지 검증
+    @Test
+    @DisplayName("리프레시 토큰 테스트")
+    @Transactional
+    void refreshTokenTest() {
+        String testToken = "test-token";
+        String hashedRefreshTestToken1 = "test-hashed-token1";
+        String hashedRefreshTestToken2 = "test-hashed-token2";
+        String generatedRefreshToken = "test-generated-refresh-token";
+        String generatedAccessToken = "test-generated-access-token";
+
+        given(jwtProvider.generateRefreshToken(any())).willReturn(generatedRefreshToken);
+        given(jwtProvider.generateAccessToken(any())).willReturn(generatedAccessToken);
+        given(jwtProvider.getAccessTokenExpiration()).willReturn(3600000L);
+        given(jwtProvider.getRefreshTokenExpiration()).willReturn(2592000000L);
+
+        try (MockedStatic<TokenHasher> mocked = Mockito.mockStatic(TokenHasher.class)) {
+            mocked.when(() -> TokenHasher.hash(testToken)).thenReturn(hashedRefreshTestToken1);
+            mocked.when(() -> TokenHasher.hash(generatedRefreshToken)).thenReturn(hashedRefreshTestToken2);
+
+            // 1. DB 조회 실패 케이스
+            assertThatThrownBy(() -> authService.refreshToken(testToken))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.AUTH_TOKEN_INVALID);
+
+            // 2. 로그인 후 토큰 발급받은 상태 - DB 조회 성공
+            User user = User.create("test@gmail.com", "nickname");
+            userRepository.save(user);
+
+            UserToken userToken = UserToken.create(user, hashedRefreshTestToken1, Instant.now().plusMillis(10000));
+            userTokenRepository.save(userToken);
+
+            AuthTokenResponse dbQuerySuccessCase = authService.refreshToken(testToken);
+            assertThat(dbQuerySuccessCase.accessToken()).isEqualTo(generatedAccessToken);
+            assertThat(dbQuerySuccessCase.refreshToken()).isEqualTo(generatedRefreshToken);
+            assertThat(userTokenRepository.findAll().size()).isEqualTo(1);
+            assertThat(userTokenRepository.findAll().getLast().getRefreshTokenHash()).isEqualTo(hashedRefreshTestToken2);
+        }
     }
 }
