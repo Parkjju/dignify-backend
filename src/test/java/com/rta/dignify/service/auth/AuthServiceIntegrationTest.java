@@ -22,6 +22,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -135,6 +136,66 @@ class AuthServiceIntegrationTest {
             assertThat(dbQuerySuccessCase.refreshToken()).isEqualTo(generatedRefreshToken);
             assertThat(userTokenRepository.findAll().size()).isEqualTo(1);
             assertThat(userTokenRepository.findAll().getLast().getRefreshTokenHash()).isEqualTo(hashedRefreshTestToken2);
+        }
+    }
+
+    @Test
+    @DisplayName("로그아웃 테스트")
+    @Transactional
+    void logoutTest() {
+        String testRefreshToken = "test-refresh-token";
+        String hashedTestRefreshToken = "test-hashed-refresh-token";
+        try (MockedStatic<TokenHasher> mocked = Mockito.mockStatic(TokenHasher.class)) {
+            mocked.when(() -> TokenHasher.hash(testRefreshToken)).thenReturn(hashedTestRefreshToken);
+
+            User user = User.create("test@gmail.com", "test-nickname");
+            userRepository.save(user);
+
+            UserToken userToken = UserToken.create(user, hashedTestRefreshToken, Instant.now());
+            userTokenRepository.save(userToken);
+
+            // 1. 유저토큰 저장
+            assertThat(userTokenRepository.findAll().size()).isEqualTo(1);
+
+            // 2. 로그아웃 후 유저토큰 제거 검증
+            authService.logout(testRefreshToken);
+            assertThat(userTokenRepository.findAll().isEmpty()).isTrue();
+        }
+    }
+
+    @Test
+    @DisplayName("회원탈퇴 테스트")
+    @Transactional
+    void withdrawTest() {
+        String testRefreshToken = "test-refresh-token";
+        String hashedTestRefreshToken1 = "test-hashed-refresh-token1";
+        String hashedTestRefreshToken2 = "test-hashed-refresh-token2";
+        try (MockedStatic<TokenHasher> mocked = Mockito.mockStatic(TokenHasher.class)) {
+            mocked.when(() -> TokenHasher.hash(testRefreshToken)).thenReturn(hashedTestRefreshToken1);
+
+            // 1. DB 조회 실패 케이스
+            assertThatThrownBy(() -> authService.withdraw(testRefreshToken))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.AUTH_TOKEN_INVALID);
+
+            User user = User.create("test@gmail.com", "test-nickname");
+            userRepository.save(user);
+
+            // 멀티 디바이스 로그인 상태
+            UserToken userToken1 = UserToken.create(user, hashedTestRefreshToken1, Instant.now());
+            UserToken userToken2 = UserToken.create(user, hashedTestRefreshToken2, Instant.now());
+            userTokenRepository.saveAll(List.of(userToken1, userToken2));
+
+            assertThat(userTokenRepository.findAll().size()).isEqualTo(2);
+
+            // 2. 회원탈퇴
+            authService.withdraw(testRefreshToken);
+
+            // 3. 멀티디바이스 토큰 전체 삭제 검증
+            assertThat(userTokenRepository.findAll().isEmpty()).isTrue();
+
+            // 4. 유저 SOFT DELETE 상태 검증
+            assertThat(userRepository.findAll().getFirst().getDeletedAt()).isNotNull();
         }
     }
 }
