@@ -99,7 +99,7 @@ public class AppleAuthClient {
             Date exp = jwtClaimsSet.getExpirationTime();
             if (exp == null || exp.before(new Date())) {
                 log.warn("Identity Token 만료");
-                throw new BusinessException(ErrorCode.AUTH_IDENTITY_TOKEN_INVALID);
+                throw new BusinessException(ErrorCode.AUTH_IDENTITY_TOKEN_EXPIRED);
             }
 
             return new AppleIdentity(jwtClaimsSet.getStringClaim("email"), jwtClaimsSet.getSubject());
