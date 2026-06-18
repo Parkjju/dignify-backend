@@ -3,6 +3,7 @@ package com.rta.dignify.global.exception;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -42,6 +43,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleBusinessException(BusinessException e) {
         ErrorResponse errorResponse = ErrorResponse.from(e.getErrorCode());
         return new ResponseEntity<>(errorResponse, e.getErrorCode().getHttpStatus());
+    }
+
+    /**
+     *
+     * @param e POST 요청에서 메시지 바디가 비어있을때 발생하는 예외 처리
+     * @return HttpMessageNotReadableException
+     */
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ErrorResponse handleHttpMessageNotReadableException(HttpMessageNotReadableException e) {
+        return ErrorResponse.from(ErrorCode.METHOD_ARGUMENT_NOT_VALID);
     }
 
     /**
