@@ -12,7 +12,7 @@ public class FeedCursorTest {
     @DisplayName("커서 디코딩 및 인코딩 동작 테스트")
     void cursorCodableTest() {
 //        phase=1, genreOffset=5, generalOffset=0, seed=123
-        Integer phase = 1;
+        FeedCursor.Phase phase = FeedCursor.Phase.GENRE;
         Integer genreOffset = 5;
         Integer generalOffset = 0;
         Integer seed = 123;
