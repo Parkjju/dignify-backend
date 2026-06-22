@@ -10,6 +10,9 @@ public enum ErrorCode {
     USER_NICKNAME_DUPLICATE(HttpStatus.CONFLICT, "유저 닉네임이 이미 사용중입니다."),
     USER_NICKNAME_INVALID(HttpStatus.BAD_REQUEST, "유효하지 않은 닉네임입니다."),
 
+    // FEED domain
+    CURSOR_INVALID(HttpStatus.BAD_REQUEST, "유효하지 않은 커서값입니다."),
+
     // Auth domain
     AUTH_TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED, "인증 정보가 만료되었습니다."),
     AUTH_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다."),
