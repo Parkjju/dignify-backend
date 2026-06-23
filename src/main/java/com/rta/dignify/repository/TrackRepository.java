@@ -24,7 +24,7 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
 
     @Query(value = "SELECT t.* FROM tracks t " +
             "LEFT JOIN users_hype_tracks uht ON t.track_id = uht.track_id AND uht.user_id = :userId " +
-            "WHERE t.genre_id IN :genreIds AND uht.user_hype_track_id IS NULL " +
+            "WHERE t.genre_id IN :genreIds AND uht.user_hype_track_id IS NULL AND t.is_active IS TRUE " +
             "ORDER BY t.track_id " +
             "LIMIT :limit " +
             "OFFSET :offset", nativeQuery = true)
