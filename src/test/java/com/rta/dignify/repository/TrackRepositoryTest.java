@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -183,4 +184,33 @@ public class TrackRepositoryTest {
                 .containsExactly(rockTracks.get(3).getId(), rockTracks.get(4).getId(), rockTracks.get(5).getId());
     }
 
+    @Test
+    @DisplayName("isActive 트랙 테스트")
+    void getOnlyActivatedTracks() {
+        Genre rockGenre = Genre.create("Rock", "락");
+        entityManager.persistAndFlush(rockGenre);
+
+        Instant releaseDate = Instant.now();
+
+        Track rockTrack1 = Track.create("rock-1", "Rock Artist 1", "Rock Album 1", "Rock Track 1",
+                "https://example.com/preview/rock1.mp3", "https://example.com/track/rock1", "https://example.com/art/rock1.jpg",
+                releaseDate, rockGenre, "US", "ITUNES");
+        Track inactiveTrack = Track.create("rock-2", "Rock Artist 2", "Rock Album 2", "Rock Track 2",
+                "https://example.com/preview/rock2.mp3", "https://example.com/track/rock2", "https://example.com/art/rock2.jpg",
+                releaseDate, rockGenre, "US", "ITUNES");
+        Track rockTrack3 = Track.create("rock-3", "Rock Artist 3", "Rock Album 3", "Rock Track 3",
+                "https://example.com/preview/rock3.mp3", "https://example.com/track/rock3", "https://example.com/art/rock3.jpg",
+                releaseDate, rockGenre, "US", "ITUNES");
+
+        ReflectionTestUtils.setField(inactiveTrack, "isActive", false);
+        entityManager.persistAndFlush(rockTrack1);
+        entityManager.persistAndFlush(inactiveTrack);
+        entityManager.persistAndFlush(rockTrack3);
+
+        User user = User.create("test@gmail.com", "nickname");
+        entityManager.persistAndFlush(user);
+
+        List<Track> result = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), List.of(rockGenre.getId()), 3, 0);
+        assertThat(result).extracting(Track::getId).containsExactly(rockTrack1.getId(), rockTrack3.getId());
+    }
 }
