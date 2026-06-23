@@ -10,7 +10,23 @@ import java.util.List;
 public interface TrackRepository extends JpaRepository<Track, Long> {
     List<Track> findByGenreIdIn(List<Long> ids);
 
-    @Query("SELECT t FROM Track t LEFT JOIN UserHypeTrack uht ON t = uht.track AND uht.user.id = :userId WHERE t.genre.id IN :genreIds AND uht IS NULL")
+    @Query(value = "SELECT t.* FROM tracks t " +
+            "LEFT JOIN users_hype_tracks uht ON t.track_id = uht.track_id AND uht.user_id = :userId " +
+            "WHERE t.genre_id IN :genreIds AND uht.user_hype_track_id IS NULL", nativeQuery = true)
     List<Track> findByGenreIdsExceptHypedTrack(@Param("userId") Long userId, @Param("genreIds") List<Long> genreIds);
 
+    @Query(value = "SELECT t.* FROM tracks t " +
+            "LEFT JOIN users_hype_tracks uht ON t.track_id = uht.track_id AND uht.user_id = :userId " +
+            "WHERE t.genre_id IN :genreIds AND uht.user_hype_track_id IS NULL " +
+            "ORDER BY t.track_id " +
+            "LIMIT :limit ", nativeQuery = true)
+    List<Track> findByGenreIdsExceptHypedTrackWithLimit(@Param("userId") Long userId, @Param("genreIds") List<Long> genreIds, @Param("limit") Integer limit);
+
+    @Query(value = "SELECT t.* FROM tracks t " +
+            "LEFT JOIN users_hype_tracks uht ON t.track_id = uht.track_id AND uht.user_id = :userId " +
+            "WHERE t.genre_id IN :genreIds AND uht.user_hype_track_id IS NULL " +
+            "ORDER BY t.track_id " +
+            "LIMIT :limit " +
+            "OFFSET :offset", nativeQuery = true)
+    List<Track> findByGenreIdsExceptHypedTrackWithLimitAndOffset(@Param("userId") Long userId, @Param("genreIds") List<Long> genreIds, @Param("limit") Integer limit, @Param("offset") Integer offset);
 }
