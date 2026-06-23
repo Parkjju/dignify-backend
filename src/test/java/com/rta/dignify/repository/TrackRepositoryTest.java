@@ -13,6 +13,7 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -125,6 +126,61 @@ public class TrackRepositoryTest {
 
         // 하입 등록하지 않은 유저 테스트
         assertThat(trackRepository.findByGenreIdsExceptHypedTrack(anotherUser.getId(), List.of(rockGenre.getId(), balladGenre.getId()))).hasSize(6);
+    }
+
+    @Test
+    @DisplayName("트랙 조회 리밋 테스트")
+    void getTracksWithLimitTest() {
+        Genre rockGenre = Genre.create("Rock", "락");
+        entityManager.persistAndFlush(rockGenre);
+
+        Instant releaseDate = Instant.now();
+
+        List<Track> rockTracks = new ArrayList<>();
+        for (int i = 1; i <= 10; i++) {
+            Track rockTrack = Track.create("rock-" + i, "Rock Artist " + i, "Rock Album " + i, "Rock Track " + i,
+                    "https://example.com/preview/rock" + i + ".mp3", "https://example.com/track/rock" + i,
+                    "https://example.com/art/rock" + i + ".jpg", releaseDate, rockGenre, "US", "ITUNES");
+            entityManager.persistAndFlush(rockTrack);
+            rockTracks.add(rockTrack);
+        }
+        User user = User.create("test@gmail.com", "nickname");
+        entityManager.persistAndFlush(user);
+
+        List<Track> result = trackRepository.findByGenreIdsExceptHypedTrackWithLimit(user.getId(), List.of(rockGenre.getId()), 3);
+        assertThat(result).hasSize(3);
+        assertThat(result).extracting(Track::getId)
+                .containsExactly(rockTracks.get(0).getId(), rockTracks.get(1).getId(), rockTracks.get(2).getId());
+    }
+
+    @Test
+    @DisplayName("트랙 오프셋 / 리밋 조회")
+    void getTracksWithLimitAndOffsetTest() {
+        Genre rockGenre = Genre.create("Rock", "락");
+        entityManager.persistAndFlush(rockGenre);
+
+        Instant releaseDate = Instant.now();
+
+        List<Track> rockTracks = new ArrayList<>();
+        for (int i = 1; i <= 10; i++) {
+            Track rockTrack = Track.create("rock-" + i, "Rock Artist " + i, "Rock Album " + i, "Rock Track " + i,
+                    "https://example.com/preview/rock" + i + ".mp3", "https://example.com/track/rock" + i,
+                    "https://example.com/art/rock" + i + ".jpg", releaseDate, rockGenre, "US", "ITUNES");
+            entityManager.persistAndFlush(rockTrack);
+            rockTracks.add(rockTrack);
+        }
+        User user = User.create("test@gmail.com", "nickname");
+        entityManager.persistAndFlush(user);
+
+        List<Track> result1 = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), List.of(rockGenre.getId()), 3, 0);
+        assertThat(result1).hasSize(3);
+        assertThat(result1).extracting(Track::getId)
+                .containsExactly(rockTracks.get(0).getId(), rockTracks.get(1).getId(), rockTracks.get(2).getId());
+
+        List<Track> result2 = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), List.of(rockGenre.getId()), 3, 3);
+        assertThat(result2).hasSize(3);
+        assertThat(result2).extracting(Track::getId)
+                .containsExactly(rockTracks.get(3).getId(), rockTracks.get(4).getId(), rockTracks.get(5).getId());
     }
 
 }
