@@ -2,6 +2,7 @@ package com.rta.dignify.service;
 
 import com.rta.dignify.domain.Track;
 import com.rta.dignify.dto.feed.FeedCursor;
+import com.rta.dignify.dto.feed.FeedItem;
 import com.rta.dignify.dto.feed.FeedResponse;
 import com.rta.dignify.repository.TrackRepository;
 import lombok.RequiredArgsConstructor;
@@ -39,16 +40,18 @@ public class FeedService {
 
         if (result.size() == FeedService.FETCH_LIMIT) {
             newCursor = new FeedCursor(currentCursor.phase(), currentCursor.genreOffset() + FeedService.FETCH_LIMIT, currentCursor.generalOffset(), currentCursor.seed());
-            response = new FeedResponse(result, newCursor.encode(), true);
+            List<FeedItem> feedItems = result.stream().map((track) -> FeedItem.from(track, false)).toList();
+            response = new FeedResponse(feedItems, newCursor.encode(), true);
         } else {
             // 장르 조회에서 부족한 결과를 general 조회로 채우기
             List<Track> paddingResponse = trackRepository.findGeneralTracksByGenreIdsExceptHypedTrackWithLimitAndOffset(userId, FETCH_LIMIT - result.size(), currentCursor.generalOffset());
             result.addAll(paddingResponse);
+            List<FeedItem> feedItems = result.stream().map((track) -> FeedItem.from(track, false)).toList();
             newCursor = new FeedCursor(FeedCursor.Phase.GENERAL, currentCursor.genreOffset() + (FETCH_LIMIT - paddingResponse.size()), currentCursor.generalOffset() + paddingResponse.size(), currentCursor.seed());
             if (result.size() < FeedService.FETCH_LIMIT)  {
-                response = new FeedResponse(result, null, false);
+                response = new FeedResponse(feedItems, null, false);
             } else {
-                response = new FeedResponse(result, newCursor.encode(), true);
+                response = new FeedResponse(feedItems, newCursor.encode(), true);
             }
         }
         return response;

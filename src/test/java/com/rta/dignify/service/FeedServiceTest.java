@@ -5,6 +5,7 @@ import com.rta.dignify.domain.Track;
 import com.rta.dignify.domain.User;
 import com.rta.dignify.domain.UserGenre;
 import com.rta.dignify.dto.feed.FeedCursor;
+import com.rta.dignify.dto.feed.FeedItem;
 import com.rta.dignify.dto.feed.FeedResponse;
 import com.rta.dignify.global.config.JpaAuditingConfig;
 import org.junit.jupiter.api.BeforeEach;
@@ -80,10 +81,10 @@ public class FeedServiceTest {
             """)
     void noneOfPreferGenreTest() {
         FeedResponse response = feedService.getFeedList(user.getId(), null);
-        FeedCursor cursor = FeedCursor.decode(response.cursor());
+        FeedCursor cursor = FeedCursor.decode(response.nextCursor());
 
         assertThat(cursor.phase()).isEqualTo(FeedCursor.Phase.GENERAL);
-        assertThat(response.trackList()).hasSize(10);
+        assertThat(response.items()).hasSize(10);
     }
 
     @Test
@@ -99,10 +100,10 @@ public class FeedServiceTest {
         // 1. 커서 문자열 null 조회 테스트
         FeedResponse response = feedService.getFeedList(user.getId(), null);
         List<Long> expectedIds = rockTracks.subList(0, 10).stream().map(Track::getId).toList();
-        assertThat(response.trackList()).extracting(Track::getId).containsExactlyElementsOf(expectedIds);
+        assertThat(response.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(expectedIds);
 
         // 2. 커서 발급 확인
-        String cursorString = response.cursor();
+        String cursorString = response.nextCursor();
         FeedCursor cursor = FeedCursor.decode(cursorString);
         assertThat(cursor.phase()).isEqualTo(FeedCursor.Phase.GENRE);
         assertThat(cursor.generalOffset()).isEqualTo(0);
@@ -123,19 +124,19 @@ public class FeedServiceTest {
         FeedResponse response = feedService.getFeedList(user.getId(), null);
 
         // 2. 추가순회
-        FeedResponse assertResponse = feedService.getFeedList(user.getId(), response.cursor());
+        FeedResponse assertResponse = feedService.getFeedList(user.getId(), response.nextCursor());
         List<Long> expectedIdsInRock = rockTracks.subList(10, rockTracks.size()).stream().map(Track::getId).toList();
 
         // NOT IN UserGenre이므로 paddingTrack에 어떤 장르의 트랙이 들어갈지는 테스트 불필요
         // 전체 갯수만 체크
-        FeedCursor newCursor = FeedCursor.decode(assertResponse.cursor());
-        List<Track> trackResponse = assertResponse.trackList();
+        FeedCursor newCursor = FeedCursor.decode(assertResponse.nextCursor());
+        List<FeedItem> trackResponse = assertResponse.items();
         List<Long> generalPoolIds = Stream.concat(balladTracks.stream(), countryTracks.stream())
                 .map(Track::getId)
                 .toList();
 
-        assertThat(trackResponse.subList(0, 5)).extracting(Track::getId).containsExactlyElementsOf(expectedIdsInRock);
-        assertThat(trackResponse.subList(5, trackResponse.size())).extracting(Track::getId).isSubsetOf(generalPoolIds);
+        assertThat(trackResponse.subList(0, 5)).extracting(FeedItem::trackId).containsExactlyElementsOf(expectedIdsInRock);
+        assertThat(trackResponse.subList(5, trackResponse.size())).extracting(FeedItem::trackId).isSubsetOf(generalPoolIds);
         assertThat(newCursor.phase()).isEqualTo(FeedCursor.Phase.GENERAL);
         assertThat(newCursor.genreOffset()).isEqualTo(rockTracks.size());
         assertThat(newCursor.generalOffset()).isEqualTo(5);
@@ -154,43 +155,43 @@ public class FeedServiceTest {
 
         // 1. 커서 문자열 null 조회
         FeedResponse fetch1 = feedService.getFeedList(user.getId(), null);
-        FeedCursor cursor = FeedCursor.decode(fetch1.cursor());
+        FeedCursor cursor = FeedCursor.decode(fetch1.nextCursor());
         assertThat(cursor.genreOffset()).isEqualTo(10);
 
         // 2. 1차 순회
-        FeedResponse fetch2 = feedService.getFeedList(user.getId(), fetch1.cursor());
+        FeedResponse fetch2 = feedService.getFeedList(user.getId(), fetch1.nextCursor());
         List<Long> expectedIdsInRock = rockTracks.subList(10, rockTracks.size()).stream().map(Track::getId).toList();
         List<Long> expectedIdsInBallad = balladTracks.subList(0, 5).stream().map(Track::getId).toList();
 
-        assertThat(fetch2.trackList().subList(0, 5)).extracting(Track::getId).containsExactlyElementsOf(expectedIdsInRock);
-        assertThat(fetch2.trackList().subList(5, fetch2.trackList().size())).extracting(Track::getId).containsExactlyElementsOf(expectedIdsInBallad);
+        assertThat(fetch2.items().subList(0, 5)).extracting(FeedItem::trackId).containsExactlyElementsOf(expectedIdsInRock);
+        assertThat(fetch2.items().subList(5, fetch2.items().size())).extracting(FeedItem::trackId).containsExactlyElementsOf(expectedIdsInBallad);
 
         // 3. 2차 순회, 선호장르 전부 소진
-        FeedResponse fetch3 = feedService.getFeedList(user.getId(), fetch2.cursor());
-        FeedCursor fetch3Cursor = FeedCursor.decode(fetch3.cursor());
+        FeedResponse fetch3 = feedService.getFeedList(user.getId(), fetch2.nextCursor());
+        FeedCursor fetch3Cursor = FeedCursor.decode(fetch3.nextCursor());
         List<Long> expectedIdsInBalladLast = balladTracks.subList(5, balladTracks.size()).stream().map(Track::getId).toList();
 
-        assertThat(fetch3.trackList()).extracting(Track::getId).containsExactlyElementsOf(expectedIdsInBalladLast);
+        assertThat(fetch3.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(expectedIdsInBalladLast);
         assertThat(fetch3Cursor.genreOffset()).isEqualTo(rockTracks.size() + balladTracks.size());
         assertThat(fetch3Cursor.phase()).isEqualTo(FeedCursor.Phase.GENRE); // 꽉맞게 소진할때까지는 GENRE Phase 유지
 
         // 4. 3차 순회, GENERAL 순회
-        FeedResponse fetch4 = feedService.getFeedList(user.getId(), fetch3.cursor());
-        FeedCursor fetch4Cursor = FeedCursor.decode(fetch4.cursor());
+        FeedResponse fetch4 = feedService.getFeedList(user.getId(), fetch3.nextCursor());
+        FeedCursor fetch4Cursor = FeedCursor.decode(fetch4.nextCursor());
         List<Long> expectedIdsInCountry = countryTracks.subList(0, 10).stream().map(Track::getId).toList();
 
-        assertThat(fetch4.trackList()).extracting(Track::getId).containsExactlyElementsOf(expectedIdsInCountry);
+        assertThat(fetch4.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(expectedIdsInCountry);
         assertThat(fetch4Cursor.phase()).isEqualTo(FeedCursor.Phase.GENERAL);
 
         // 5. 최종 순회
         // - 5개만 최종 결과 반환
         // - cursor값 null
         // - hasMore false
-        FeedResponse fetch5 = feedService.getFeedList(user.getId(), fetch4.cursor());
+        FeedResponse fetch5 = feedService.getFeedList(user.getId(), fetch4.nextCursor());
         List<Long> expectedIdsInCountryLast = countryTracks.subList(10, countryTracks.size()).stream().map(Track::getId).toList();
 
-        assertThat(fetch5.trackList()).extracting(Track::getId).containsExactlyElementsOf(expectedIdsInCountryLast);
-        assertThat(fetch5.cursor()).isNull();
+        assertThat(fetch5.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(expectedIdsInCountryLast);
+        assertThat(fetch5.nextCursor()).isNull();
         assertThat(fetch5.hasMore()).isFalse();
     }
 }
