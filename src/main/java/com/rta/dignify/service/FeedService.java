@@ -15,7 +15,8 @@ import java.util.concurrent.ThreadLocalRandom;
 @RequiredArgsConstructor
 @Service
 public class FeedService {
-    private static final Integer FETCH_LIMIT = 10;
+    static final Integer FETCH_LIMIT = 10;
+
     private final TrackRepository trackRepository;
 
     @Transactional
