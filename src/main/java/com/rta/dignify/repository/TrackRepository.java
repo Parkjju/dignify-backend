@@ -11,20 +11,6 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
     @Query(value = "SELECT t.* FROM tracks t " +
             "LEFT JOIN users_hype_tracks uht ON t.track_id = uht.track_id AND uht.user_id = :userId " +
             "JOIN user_genres ug ON ug.genre_id = t.genre_id AND ug.user_id = :userId " +
-            "WHERE uht.user_hype_track_id IS NULL", nativeQuery = true)
-    List<Track> findByGenreIdsExceptHypedTrack(@Param("userId") Long userId);
-
-    @Query(value = "SELECT t.* FROM tracks t " +
-            "LEFT JOIN users_hype_tracks uht ON t.track_id = uht.track_id AND uht.user_id = :userId " +
-            "JOIN user_genres ug ON ug.genre_id = t.genre_id AND ug.user_id = :userId " +
-            "WHERE uht.user_hype_track_id IS NULL " +
-            "ORDER BY t.track_id " +
-            "LIMIT :limit ", nativeQuery = true)
-    List<Track> findByGenreIdsExceptHypedTrackWithLimit(@Param("userId") Long userId, @Param("limit") Integer limit);
-
-    @Query(value = "SELECT t.* FROM tracks t " +
-            "LEFT JOIN users_hype_tracks uht ON t.track_id = uht.track_id AND uht.user_id = :userId " +
-            "JOIN user_genres ug ON ug.genre_id = t.genre_id AND ug.user_id = :userId " +
             "WHERE uht.user_hype_track_id IS NULL AND t.is_active IS TRUE " +
             "ORDER BY t.track_id " +
             "LIMIT :limit " +
