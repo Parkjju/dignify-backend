@@ -1,9 +1,6 @@
 package com.rta.dignify.repository;
 
-import com.rta.dignify.domain.Genre;
-import com.rta.dignify.domain.Track;
-import com.rta.dignify.domain.User;
-import com.rta.dignify.domain.UserHypeTrack;
+import com.rta.dignify.domain.*;
 import com.rta.dignify.global.config.JpaAuditingConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,50 +24,6 @@ public class TrackRepositoryTest {
 
     @Autowired
     TrackRepository trackRepository;
-
-    @Test
-    @DisplayName("장르 필터 테스트")
-    void genreFilterTest() {
-        // 1. 테스트 데이터
-        Genre rockGenre = Genre.create("rock", "락");
-        Genre balladGenre = Genre.create("ballad", "발라드");
-
-        entityManager.persistAndFlush(rockGenre);
-        entityManager.persistAndFlush(balladGenre);
-
-        Instant releaseDate = Instant.now();
-
-        Track rockTrack1 = Track.create("rock-1", "Rock Artist 1", "Rock Album 1", "Rock Track 1",
-                "https://example.com/preview/rock1.mp3", "https://example.com/track/rock1", "https://example.com/art/rock1.jpg",
-                releaseDate, rockGenre, "US", "ITUNES");
-        Track rockTrack2 = Track.create("rock-2", "Rock Artist 2", "Rock Album 2", "Rock Track 2",
-                "https://example.com/preview/rock2.mp3", "https://example.com/track/rock2", "https://example.com/art/rock2.jpg",
-                releaseDate, rockGenre, "US", "ITUNES");
-        Track rockTrack3 = Track.create("rock-3", "Rock Artist 3", "Rock Album 3", "Rock Track 3",
-                "https://example.com/preview/rock3.mp3", "https://example.com/track/rock3", "https://example.com/art/rock3.jpg",
-                releaseDate, rockGenre, "US", "ITUNES");
-
-        Track balladTrack1 = Track.create("ballad-1", "Ballad Artist 1", "Ballad Album 1", "Ballad Track 1",
-                "https://example.com/preview/ballad1.mp3", "https://example.com/track/ballad1", "https://example.com/art/ballad1.jpg",
-                releaseDate, balladGenre, "US", "ITUNES");
-        Track balladTrack2 = Track.create("ballad-2", "Ballad Artist 2", "Ballad Album 2", "Ballad Track 2",
-                "https://example.com/preview/ballad2.mp3", "https://example.com/track/ballad2", "https://example.com/art/ballad2.jpg",
-                releaseDate, balladGenre, "US", "ITUNES");
-        Track balladTrack3 = Track.create("ballad-3", "Ballad Artist 3", "Ballad Album 3", "Ballad Track 3",
-                "https://example.com/preview/ballad3.mp3", "https://example.com/track/ballad3", "https://example.com/art/ballad3.jpg",
-                releaseDate, balladGenre, "US", "ITUNES");
-
-        entityManager.persistAndFlush(rockTrack1);
-        entityManager.persistAndFlush(rockTrack2);
-        entityManager.persistAndFlush(rockTrack3);
-        entityManager.persistAndFlush(balladTrack1);
-        entityManager.persistAndFlush(balladTrack2);
-        entityManager.persistAndFlush(balladTrack3);
-
-        // 2. 복수 장르 필터 / 단일 장르 필터 테스트
-        assertThat(trackRepository.findByGenreIdIn(List.of(rockGenre.getId(), balladGenre.getId()))).hasSize(6);
-        assertThat(trackRepository.findByGenreIdIn(List.of(rockGenre.getId()))).hasSize(3);
-    }
 
     @Test
     @DisplayName("하입한 트랙 제외 테스트")
@@ -113,8 +66,18 @@ public class TrackRepositoryTest {
         User user = User.create("test@gmail.com", "nickname");
         entityManager.persistAndFlush(user);
 
+        UserGenre userWithRockGenre = UserGenre.create(user, rockGenre);
+        UserGenre userWithBalladGenre = UserGenre.create(user, balladGenre);
+        entityManager.persistAndFlush(userWithRockGenre);
+        entityManager.persistAndFlush(userWithBalladGenre);
+
         User anotherUser = User.create("new@gmail.com", "testNickname");
         entityManager.persistAndFlush(anotherUser);
+
+        UserGenre anotherUserWithRockGenre = UserGenre.create(anotherUser, rockGenre);
+        UserGenre anotherUserWithBalladGenre = UserGenre.create(anotherUser, balladGenre);
+        entityManager.persistAndFlush(anotherUserWithRockGenre);
+        entityManager.persistAndFlush(anotherUserWithBalladGenre);
 
         UserHypeTrack hypeRockTrack = UserHypeTrack.create(user, rockTrack1);
         entityManager.persistAndFlush(hypeRockTrack);
@@ -123,10 +86,10 @@ public class TrackRepositoryTest {
         entityManager.persistAndFlush(hypeBalladTrack);
 
         // 하입 트랙 제외 테스트
-        assertThat(trackRepository.findByGenreIdsExceptHypedTrack(user.getId(), List.of(rockGenre.getId(), balladGenre.getId()))).hasSize(4);
+        assertThat(trackRepository.findByGenreIdsExceptHypedTrack(user.getId())).hasSize(4);
 
         // 하입 등록하지 않은 유저 테스트
-        assertThat(trackRepository.findByGenreIdsExceptHypedTrack(anotherUser.getId(), List.of(rockGenre.getId(), balladGenre.getId()))).hasSize(6);
+        assertThat(trackRepository.findByGenreIdsExceptHypedTrack(anotherUser.getId())).hasSize(6);
     }
 
     @Test
@@ -148,7 +111,10 @@ public class TrackRepositoryTest {
         User user = User.create("test@gmail.com", "nickname");
         entityManager.persistAndFlush(user);
 
-        List<Track> result = trackRepository.findByGenreIdsExceptHypedTrackWithLimit(user.getId(), List.of(rockGenre.getId()), 3);
+        UserGenre userWithRockGenre = UserGenre.create(user, rockGenre);
+        entityManager.persistAndFlush(userWithRockGenre);
+
+        List<Track> result = trackRepository.findByGenreIdsExceptHypedTrackWithLimit(user.getId(), 3);
         assertThat(result).hasSize(3);
         assertThat(result).extracting(Track::getId)
                 .containsExactly(rockTracks.get(0).getId(), rockTracks.get(1).getId(), rockTracks.get(2).getId());
@@ -173,12 +139,15 @@ public class TrackRepositoryTest {
         User user = User.create("test@gmail.com", "nickname");
         entityManager.persistAndFlush(user);
 
-        List<Track> result1 = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), List.of(rockGenre.getId()), 3, 0);
+        UserGenre userWithRockGenre = UserGenre.create(user, rockGenre);
+        entityManager.persistAndFlush(userWithRockGenre);
+
+        List<Track> result1 = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 3, 0);
         assertThat(result1).hasSize(3);
         assertThat(result1).extracting(Track::getId)
                 .containsExactly(rockTracks.get(0).getId(), rockTracks.get(1).getId(), rockTracks.get(2).getId());
 
-        List<Track> result2 = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), List.of(rockGenre.getId()), 3, 3);
+        List<Track> result2 = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 3, 3);
         assertThat(result2).hasSize(3);
         assertThat(result2).extracting(Track::getId)
                 .containsExactly(rockTracks.get(3).getId(), rockTracks.get(4).getId(), rockTracks.get(5).getId());
@@ -210,7 +179,52 @@ public class TrackRepositoryTest {
         User user = User.create("test@gmail.com", "nickname");
         entityManager.persistAndFlush(user);
 
-        List<Track> result = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), List.of(rockGenre.getId()), 3, 0);
+        UserGenre userWithRockGenre = UserGenre.create(user, rockGenre);
+        entityManager.persistAndFlush(userWithRockGenre);
+
+        List<Track> result = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 3, 0);
         assertThat(result).extracting(Track::getId).containsExactly(rockTrack1.getId(), rockTrack3.getId());
+    }
+
+    @Test
+    @DisplayName("선호 장르 필터링 테스트")
+    void preferGenreTrackTest() {
+        Genre rockGenre = Genre.create("Rock", "락");
+        entityManager.persistAndFlush(rockGenre);
+
+        Genre balladGenre = Genre.create("Ballad", "발라드");
+        entityManager.persistAndFlush(balladGenre);
+
+        Instant releaseDate = Instant.now();
+
+        for (int i = 1; i <= 10; i++) {
+            Track rockTrack = Track.create("rock-" + i, "Rock Artist " + i, "Rock Album " + i, "Rock Track " + i,
+                    "https://example.com/preview/rock" + i + ".mp3", "https://example.com/track/rock" + i,
+                    "https://example.com/art/rock" + i + ".jpg", releaseDate, rockGenre, "US", "ITUNES");
+            entityManager.persistAndFlush(rockTrack);
+        }
+
+        for (int i = 1; i <= 10; i++) {
+            Track balladTrack = Track.create("ballad-" + i, "ballad Artist " + i, "ballad Album " + i, "ballad Track " + i,
+                    "https://example.com/preview/ballad" + i + ".mp3", "https://example.com/track/ballad" + i,
+                    "https://example.com/art/ballad" + i + ".jpg", releaseDate, balladGenre, "US", "ITUNES");
+            entityManager.persistAndFlush(balladTrack);
+        }
+
+        User user = User.create("test@gmail.com", "nickname");
+        entityManager.persistAndFlush(user);
+
+        UserGenre userWithRockGenre = UserGenre.create(user, rockGenre);
+        entityManager.persistAndFlush(userWithRockGenre);
+
+        // 선호 장르인 Rock 트랙만 10개 조회, 발라드 트랙은 조회되면 안됨
+        assertThat(trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 20, 0)).hasSize(10)
+                .extracting(Track::getGenre).extracting(Genre::getGenreNameKo).doesNotContain("발라드");
+
+        // 장르 선호 추가
+        UserGenre userWithBalladGenre = UserGenre.create(user, balladGenre);
+        entityManager.persistAndFlush(userWithBalladGenre);
+
+        assertThat(trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 20, 0)).hasSize(20);
     }
 }
