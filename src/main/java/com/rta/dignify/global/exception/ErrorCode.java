@@ -13,6 +13,13 @@ public enum ErrorCode {
     // FEED domain
     CURSOR_INVALID(HttpStatus.BAD_REQUEST, "유효하지 않은 커서값입니다."),
 
+    // Hype
+    HYPE_ALREADY_REGISTERED(HttpStatus.CONFLICT, "이미 하입이 등록되어 있습니다."),
+    HYPE_NOT_FOUND(HttpStatus.NOT_FOUND, "존재하지 않는 하입 대상입니다."),
+
+    // track domain
+    TRACK_NOT_FOUND(HttpStatus.NOT_FOUND, "트랙을 찾지 못했습니다."),
+
     // Auth domain
     AUTH_TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED, "인증 정보가 만료되었습니다."),
     AUTH_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다."),

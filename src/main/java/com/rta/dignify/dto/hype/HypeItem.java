@@ -9,5 +9,5 @@ public record HypeItem(Long userHypeTrackId, Long trackId, String trackName, Str
     public static HypeItem from(UserHypeTrack userHypeTrack) {
         Track track = userHypeTrack.getTrack();
         return new HypeItem(userHypeTrack.getId(), track.getId(), track.getTrackName(), track.getArtistName(), track.getArtworkUrl(), track.getPreviewUrl(), userHypeTrack.getCreatedAt());
-    } 
+    }
 }

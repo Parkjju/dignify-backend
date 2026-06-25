@@ -19,7 +19,7 @@ public interface UserHypeTrackRepository extends JpaRepository<UserHypeTrack, Lo
      * @param userId 유저 아이디
      * @param cursor 마지막에 fetch한 UserHypeTrack 리스트의 Last ID값
      * @param pageable 페이지네이션 객체
-     * @return
+     * @return 유저 하입 트랙 리스트
      */
     @Query(value = "SELECT uht FROM UserHypeTrack uht " +
             "JOIN FETCH uht.track " +
