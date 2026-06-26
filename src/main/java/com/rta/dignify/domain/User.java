@@ -42,4 +42,8 @@ public class User extends BaseTimeEntity {
     public void deleteUser() {
         this.deletedAt = Instant.now();
     }
+
+    public void changeNickname(String nickname) {
+        this.nickname = nickname;
+    }
 }
