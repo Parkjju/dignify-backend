@@ -8,6 +8,7 @@ import com.rta.dignify.service.HypeService;
 import com.rta.dignify.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,5 +32,11 @@ public class UserController {
     @PatchMapping("/me/nickname")
     public NicknameUpdateResponse changeUserNickname(@AuthenticationPrincipal Long userId, @RequestBody @Valid NicknameUpdateRequest request) {
         return userService.changeUserNickname(userId, request);
+    }
+
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PostMapping("/me/onboarding/complete")
+    public void completeOnboarding(@AuthenticationPrincipal Long userId) {
+        userService.completeOnboarding(userId);
     }
 }

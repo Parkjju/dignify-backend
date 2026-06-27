@@ -39,4 +39,10 @@ public class UserService {
         user.changeNickname(request.nickname());
         return new NicknameUpdateResponse(request.nickname());
     }
+
+    @Transactional
+    public void completeOnboarding(Long userId) {
+        User user = userRepository.getReferenceById(userId);
+        user.completeOnboarding();
+    }
 }

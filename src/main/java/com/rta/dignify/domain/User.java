@@ -46,4 +46,8 @@ public class User extends BaseTimeEntity {
     public void changeNickname(String nickname) {
         this.nickname = nickname;
     }
+
+    public void completeOnboarding() {
+        this.isOnboardingComplete = true;
+    }
 }

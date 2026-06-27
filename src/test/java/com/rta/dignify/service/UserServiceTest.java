@@ -41,7 +41,7 @@ public class UserServiceTest {
         Genre genre = Genre.create("rock", "락");
         userRepository.save(user);
         genreRepository.save(genre);
-        
+
         UserGenre userGenre = UserGenre.create(user, genre);
         userGenreRepository.save(userGenre);
 
@@ -66,5 +66,16 @@ public class UserServiceTest {
         assertThatThrownBy(() -> userService.changeUserNickname(user.getId(), new NicknameUpdateRequest("anotherUser")))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_NICKNAME_DUPLICATE);
+    }
+
+    @Test
+    @DisplayName("온보딩 완료 처리 테스트")
+    void completeOnboardingTest() {
+        User user = User.create("test@gmail.com", "nickname");
+        userRepository.save(user);
+
+        userService.completeOnboarding(user.getId());
+
+        assertThat(userRepository.findById(user.getId()).orElseThrow().getIsOnboardingComplete()).isTrue();
     }
 }
