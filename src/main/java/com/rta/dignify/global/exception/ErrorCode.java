@@ -20,6 +20,9 @@ public enum ErrorCode {
     // track domain
     TRACK_NOT_FOUND(HttpStatus.NOT_FOUND, "트랙을 찾지 못했습니다."),
 
+    // Genre domain
+    GENRE_NOT_FOUND(HttpStatus.NOT_FOUND, "장르를 찾지 못했습니다."),
+
     // Auth domain
     AUTH_TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED, "인증 정보가 만료되었습니다."),
     AUTH_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않은 토큰입니다."),

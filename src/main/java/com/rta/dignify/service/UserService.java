@@ -1,13 +1,16 @@
 package com.rta.dignify.service;
 
+import com.rta.dignify.domain.Genre;
 import com.rta.dignify.domain.User;
 import com.rta.dignify.domain.UserGenre;
 import com.rta.dignify.dto.genre.GenreResponse;
 import com.rta.dignify.dto.user.NicknameUpdateRequest;
 import com.rta.dignify.dto.user.NicknameUpdateResponse;
+import com.rta.dignify.dto.user.PreferGenreUpdateRequest;
 import com.rta.dignify.dto.user.UserProfileResponse;
 import com.rta.dignify.global.exception.BusinessException;
 import com.rta.dignify.global.exception.ErrorCode;
+import com.rta.dignify.repository.GenreRepository;
 import com.rta.dignify.repository.UserGenreRepository;
 import com.rta.dignify.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +24,7 @@ import java.util.List;
 public class UserService {
     private final UserRepository userRepository;
     private final UserGenreRepository userGenreRepository;
+    private final GenreRepository genreRepository;
 
     @Transactional(readOnly = true)
     public UserProfileResponse getUserProfile(Long userId) {
@@ -44,5 +48,17 @@ public class UserService {
     public void completeOnboarding(Long userId) {
         User user = userRepository.getReferenceById(userId);
         user.completeOnboarding();
+    }
+
+    @Transactional
+    public void changeUserGenres(Long userId, PreferGenreUpdateRequest request) {
+        userGenreRepository.deleteByUser_Id(userId);
+        User user = userRepository.getReferenceById(userId);
+        request.genreIds().forEach(genreId -> {
+            Genre dbGenre = genreRepository.findById(genreId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.GENRE_NOT_FOUND));
+            UserGenre updateGenre = UserGenre.create(user, dbGenre);
+            userGenreRepository.save(updateGenre);
+        });
     }
 }

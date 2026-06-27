@@ -3,6 +3,7 @@ package com.rta.dignify.controller;
 import com.rta.dignify.dto.hype.HypeListResponse;
 import com.rta.dignify.dto.user.NicknameUpdateRequest;
 import com.rta.dignify.dto.user.NicknameUpdateResponse;
+import com.rta.dignify.dto.user.PreferGenreUpdateRequest;
 import com.rta.dignify.dto.user.UserProfileResponse;
 import com.rta.dignify.service.HypeService;
 import com.rta.dignify.service.UserService;
@@ -38,5 +39,10 @@ public class UserController {
     @PostMapping("/me/onboarding/complete")
     public void completeOnboarding(@AuthenticationPrincipal Long userId) {
         userService.completeOnboarding(userId);
+    }
+
+    @PutMapping("/me/genres")
+    public void changeUserGenres(@AuthenticationPrincipal Long userId, @RequestBody @Valid PreferGenreUpdateRequest request) {
+        userService.changeUserGenres(userId, request);
     }
 }

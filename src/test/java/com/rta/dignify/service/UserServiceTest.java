@@ -4,6 +4,7 @@ import com.rta.dignify.domain.Genre;
 import com.rta.dignify.domain.User;
 import com.rta.dignify.domain.UserGenre;
 import com.rta.dignify.dto.user.NicknameUpdateRequest;
+import com.rta.dignify.dto.user.PreferGenreUpdateRequest;
 import com.rta.dignify.dto.user.UserProfileResponse;
 import com.rta.dignify.global.exception.BusinessException;
 import com.rta.dignify.global.exception.ErrorCode;
@@ -15,6 +16,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -77,5 +80,29 @@ public class UserServiceTest {
         userService.completeOnboarding(user.getId());
 
         assertThat(userRepository.findById(user.getId()).orElseThrow().getIsOnboardingComplete()).isTrue();
+    }
+
+    @Test
+    @DisplayName("유저 장르 변경 테스트")
+    void changeUserGenreTest() {
+        User user = User.create("test@gmail.com", "nickname");
+        userRepository.save(user);
+
+        Genre rockGenre = Genre.create("rock", "락");
+        Genre balladGenre = Genre.create("ballad", "발라드");
+        Genre countryGenre = Genre.create("country", "컨트리");
+
+        genreRepository.save(rockGenre);
+        genreRepository.save(balladGenre);
+        genreRepository.save(countryGenre);
+
+        UserGenre userRockGenre = UserGenre.create(user, rockGenre);
+        userGenreRepository.save(userRockGenre);
+
+        userService.changeUserGenres(user.getId(), new PreferGenreUpdateRequest(List.of(balladGenre.getId(), countryGenre.getId())));
+        assertThat(userGenreRepository.findUserGenresByUserId(user.getId()))
+                .extracting(ug -> ug.getGenre().getId())
+                .doesNotContain(rockGenre.getId())
+                .containsExactlyInAnyOrder(balladGenre.getId(), countryGenre.getId());
     }
 }
