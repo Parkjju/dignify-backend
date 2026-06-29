@@ -132,4 +132,36 @@ public class TrackRepositoryTest {
 
         assertThat(trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 20, 0)).hasSize(20);
     }
+
+    @Test
+    @DisplayName("트랙 검색기능 테스트")
+    void searchTrackTest() {
+        Genre rockGenre = Genre.create("Rock", "락");
+        entityManager.persistAndFlush(rockGenre);
+
+        Instant releaseDate = Instant.now();
+
+        List<Track> rockTracks = new ArrayList<>();
+        for (int i = 1; i <= 10; i ++) {
+            Track rockTrack = Track.create("rock-" + i, "Rock Artist " + i, "Rock Album " + i, "Rock Track " + i,
+                    "https://example.com/preview/rock" + i + ".mp3", "https://example.com/track/rock" + i,
+                    "https://example.com/art/rock" + i + ".jpg", releaseDate, rockGenre, "US", "ITUNES");
+            entityManager.persistAndFlush(rockTrack);
+            rockTracks.add(rockTrack);
+        }
+
+        for (int i = 11; i <= 20; i ++) {
+            Track rockTrack = Track.create("rock-" + i, "search Rock Artist " + i, "Rock Album " + i, "search Rock Track " + i,
+                    "https://example.com/preview/rock" + i + ".mp3", "https://example.com/track/rock" + i,
+                    "https://example.com/art/rock" + i + ".jpg", releaseDate, rockGenre, "US", "ITUNES");
+            entityManager.persistAndFlush(rockTrack);
+            rockTracks.add(rockTrack);
+        }
+
+        List<Track> searchTracks1 = trackRepository.findTracksWithSearchKeyword("search", 10, 0);
+        assertThat(searchTracks1).extracting(Track::getId).containsExactlyElementsOf(rockTracks.subList(10, 20).stream().map(Track::getId).toList());
+
+        List<Track> searchTracks2 = trackRepository.findTracksWithSearchKeyword("search", 10, 10);
+        assertThat(searchTracks2).isEmpty();
+    }
 }
