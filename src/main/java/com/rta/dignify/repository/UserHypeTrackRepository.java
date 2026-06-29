@@ -29,4 +29,12 @@ public interface UserHypeTrackRepository extends JpaRepository<UserHypeTrack, Lo
 
     )
     List<UserHypeTrack> findUserHypeTracksByUserId(@Param("userId") Long userId, @Param("cursor") Long cursor, Pageable pageable);
+
+    @Query(value = "SELECT uht FROM UserHypeTrack uht " +
+            "JOIN FETCH uht.user " +
+            "WHERE uht.track.id = :trackId " +
+            "ORDER BY uht.createdAt ASC " +
+            "LIMIT 5"
+    )
+    List<UserHypeTrack> findFirstFiveHypeUsers(@Param("trackId") Long trackId);
 }

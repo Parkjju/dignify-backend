@@ -89,4 +89,31 @@ public class UserHypeRepositoryTest {
         List<UserHypeTrack> lastPage = userHypeTrackRepository.findUserHypeTracksByUserId(user.getId(), secondPage.getLast().getId(), PageRequest.of(0, 10));
         assertThat(lastPage).extracting((uht) -> uht.getTrack().getId()).isEmpty();
     }
+
+    @Test
+    @DisplayName("첫 다섯명 하입 유저 조회 기능 테스트")
+    void firstFiveHypeUserTest() {
+        entityManager.persistAndFlush(rockGenre);
+        Track rockTrack = Track.create("rock-1", "Rock Artist 1", "Rock Album 1", "Rock Track 1",
+                "https://example.com/preview/rock1.mp3", "https://example.com/track/rock1", "https://example.com/art/rock1.jpg",
+                Instant.now(), rockGenre, "US", "ITUNES");
+        entityManager.persistAndFlush(rockTrack);
+
+        List<User> users = new ArrayList<>();
+
+        for(int i=0; i<10; i++) {
+            User user = User.create("test" + i + "@gmail.com", "test" + i);
+            entityManager.persistAndFlush(user);
+
+            users.add(user);
+
+            UserHypeTrack userHypeTrack = UserHypeTrack.create(user, rockTrack);
+            entityManager.persistAndFlush(userHypeTrack);
+        }
+
+        List<UserHypeTrack> userHypeTracks = userHypeTrackRepository.findFirstFiveHypeUsers(rockTrack.getId());
+        assertThat(userHypeTracks).extracting(UserHypeTrack::getUser).extracting(User::getId)
+                .containsExactlyElementsOf(users.subList(0,5).stream().map(User::getId).toList());
+
+    }
 }
