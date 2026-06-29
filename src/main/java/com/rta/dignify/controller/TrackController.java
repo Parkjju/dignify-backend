@@ -1,5 +1,6 @@
 package com.rta.dignify.controller;
 
+import com.rta.dignify.dto.track.TrackDetailResponse;
 import com.rta.dignify.service.HypeService;
 import com.rta.dignify.service.ListenService;
 import lombok.RequiredArgsConstructor;
@@ -31,5 +32,10 @@ public class TrackController {
     @PostMapping("/{trackId}/listen")
     public void recordListenedTrack(@AuthenticationPrincipal Long userId, @PathVariable Long trackId) {
         listenService.recordListenedTrack(userId, trackId);
+    }
+
+    @GetMapping("/{trackId}")
+    public TrackDetailResponse getTrackDetails(@PathVariable Long trackId) {
+        return hypeService.getTrackDetails(trackId);
     }
 }

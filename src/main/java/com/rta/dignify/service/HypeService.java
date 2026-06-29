@@ -5,6 +5,7 @@ import com.rta.dignify.domain.User;
 import com.rta.dignify.domain.UserHypeTrack;
 import com.rta.dignify.dto.hype.HypeItem;
 import com.rta.dignify.dto.hype.HypeListResponse;
+import com.rta.dignify.dto.track.TrackDetailResponse;
 import com.rta.dignify.global.exception.BusinessException;
 import com.rta.dignify.global.exception.ErrorCode;
 import com.rta.dignify.repository.TrackRepository;
@@ -56,5 +57,12 @@ public class HypeService {
             hypeListResponse = new HypeListResponse(hypeItems, hypeItems.getLast().userHypeTrackId());
         }
         return hypeListResponse;
+    }
+
+    @Transactional(readOnly = true)
+    public TrackDetailResponse getTrackDetails(Long trackId) {
+        Track track = trackRepository.findById(trackId).orElseThrow(() -> new BusinessException(ErrorCode.TRACK_NOT_FOUND));
+        List<UserHypeTrack> userHypeTrack = userHypeTrackRepository.findFirstFiveHypeUsers(trackId);
+        return TrackDetailResponse.from(track, userHypeTrack);
     }
 }
