@@ -5,6 +5,7 @@ import com.rta.dignify.dto.feed.FeedCursor;
 import com.rta.dignify.dto.feed.FeedItem;
 import com.rta.dignify.dto.feed.FeedResponse;
 import com.rta.dignify.repository.TrackRepository;
+import com.rta.dignify.repository.UserHypeTrackRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +20,7 @@ public class FeedService {
     static final Integer FETCH_LIMIT = 10;
 
     private final TrackRepository trackRepository;
+    private final UserHypeTrackRepository userHypeTrackRepository;
 
     @Transactional
     public FeedResponse getFeedList(Long userId, String cursorString) {
@@ -54,6 +56,34 @@ public class FeedService {
                 response = new FeedResponse(feedItems, newCursor.encode(), true);
             }
         }
+        return response;
+    }
+
+    @Transactional(readOnly = true)
+    public FeedResponse searchFeedList(Long userId, String cursorString, String searchKeyword) {
+        List<Track> result;
+        FeedResponse response;
+        FeedCursor currentCursor;
+        FeedCursor newCursor;
+        if (cursorString == null) {
+            currentCursor = new FeedCursor(FeedCursor.Phase.GENRE, 0, 0, ThreadLocalRandom.current().nextInt());
+        } else {
+            currentCursor = FeedCursor.decode(cursorString);
+        }
+
+        result = trackRepository.findTracksWithSearchKeyword(searchKeyword, FeedService.FETCH_LIMIT, currentCursor.genreOffset());
+        List<FeedItem> feedItems = result.stream().map((track) -> {
+            boolean isHyped = userHypeTrackRepository.existsByUser_IdAndTrack_Id(userId, track.getId());
+            return FeedItem.from(track, isHyped);
+        }).toList();
+
+        if (result.size() == FeedService.FETCH_LIMIT) {
+            newCursor = new FeedCursor(currentCursor.phase(), currentCursor.genreOffset() + FeedService.FETCH_LIMIT, 0, currentCursor.seed());
+            response = new FeedResponse(feedItems, newCursor.encode(), true);
+        } else {
+            response = new FeedResponse(feedItems, null, false);
+        }
+
         return response;
     }
 }

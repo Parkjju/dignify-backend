@@ -16,4 +16,9 @@ public class FeedController {
     public FeedResponse getFeedList(@AuthenticationPrincipal Long userId, @RequestParam(required = false) String cursor) {
         return feedService.getFeedList(userId, cursor);
     }
+
+    @GetMapping("/search")
+    public FeedResponse searchFeedList(@AuthenticationPrincipal Long userId, @RequestParam(required = false) String cursor, @RequestParam String q) {
+        return feedService.searchFeedList(userId, cursor, q);
+    }
 }
