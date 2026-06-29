@@ -26,6 +26,7 @@ public enum ErrorCode {
     // Cron State domain
     CRON_JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "해당 job name을 갖는 크론잡을 찾을 수 없습니다."),
     CRON_JOB_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "크론잡 processBatch 실행에 실패했습니다. (process result null 리턴)"),
+    CRON_SECRET_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않은 크론잡 시크릿값입니다."),
 
     // Auth domain
     AUTH_TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED, "인증 정보가 만료되었습니다."),
