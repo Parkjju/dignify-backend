@@ -18,4 +18,8 @@ public class CronState extends BaseTimeEntity {
 
     @Column(name = "last_processed_id")
     private Long lastProcessedId;
+
+    public void updateLastProcessedId(Long lastProcessedId) {
+        this.lastProcessedId = lastProcessedId;
+    }
 }

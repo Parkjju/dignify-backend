@@ -5,10 +5,12 @@ public record ItunesItem(
         Long trackId,
         Long artistId,
         String artistName,
+        String collectionName,
         String trackName,
         String artworkUrl100,
         String previewUrl,
         String trackViewUrl,
         String primaryGenreName,
-        String releaseDate
+        String releaseDate,
+        String country
 ) {}

@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
+import com.rta.dignify.dto.itunes.ItunesItem;
 import java.time.Instant;
 
 @Table(name = "tracks", uniqueConstraints = @UniqueConstraint(name = "uq_external_source", columnNames = {"external_id", "source"}))
@@ -75,5 +76,21 @@ public class Track extends BaseTimeEntity {
 
     public static Track create(String externalId, String artistName, String collectionName, String trackName, String previewUrl, String trackViewUrl, String artworkUrl, Instant releaseDate, Genre genre, String country, String source) {
         return new Track(externalId, artistName, collectionName, trackName, previewUrl, trackViewUrl, artworkUrl, releaseDate, genre, country, source);
+    }
+
+    public static Track from(ItunesItem item, Genre genre) {
+        return new Track(
+                String.valueOf(item.trackId()),
+                item.artistName(),
+                item.collectionName(),
+                item.trackName(),
+                item.previewUrl(),
+                item.trackViewUrl(),
+                item.artworkUrl100(),
+                Instant.parse(item.releaseDate()),
+                genre,
+                item.country(),
+                "ITUNES"
+        );
     }
 }
