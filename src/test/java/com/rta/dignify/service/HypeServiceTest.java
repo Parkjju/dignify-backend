@@ -6,6 +6,8 @@ import com.rta.dignify.domain.User;
 import com.rta.dignify.domain.UserHypeTrack;
 import com.rta.dignify.dto.hype.HypeItem;
 import com.rta.dignify.dto.hype.HypeListResponse;
+import com.rta.dignify.dto.track.TrackDetailResponse;
+import com.rta.dignify.dto.track.TrackHypeUserItem;
 import com.rta.dignify.global.config.JpaAuditingConfig;
 import com.rta.dignify.global.exception.BusinessException;
 import com.rta.dignify.global.exception.ErrorCode;
@@ -22,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -103,6 +106,31 @@ public class HypeServiceTest {
 
         HypeListResponse response3 = hypeService.getMyHypedTracks(user.getId(), response2.items().getLast().userHypeTrackId());
         assertThat(response3.items()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("트랙 상세 조회 테스트")
+    void getTrackDetails() {
+        Track rockTrack = Track.create("rock-1", "Rock Artist 1", "Rock Album 1", "Rock Track 1",
+                "https://example.com/preview/rock1.mp3", "https://example.com/track/rock1", "https://example.com/art/rock1.jpg",
+                Instant.now(), genre, "US", "ITUNES");
+        trackRepository.save(rockTrack);
+
+        List<User> users = new ArrayList<>();
+
+        for(int i=0; i<10; i++) {
+            User user = User.create("test" + i + "@gmail.com", "test" + i);
+            userRepository.save(user);
+
+            users.add(user);
+
+            UserHypeTrack userHypeTrack = UserHypeTrack.create(user, rockTrack);
+            userHypeTrackRepository.save(userHypeTrack);
+        }
+
+        TrackDetailResponse response = hypeService.getTrackDetails(rockTrack.getId());
+        assertThat(response.firstHypers()).extracting(TrackHypeUserItem::userId).containsExactlyElementsOf(users.subList(0, 5).stream().map(User::getId).toList());
+        assertThat(response.trackId()).isEqualTo(rockTrack.getId());
     }
 
     @BeforeEach
