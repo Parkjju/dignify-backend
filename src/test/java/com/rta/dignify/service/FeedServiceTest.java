@@ -1,9 +1,6 @@
 package com.rta.dignify.service;
 
-import com.rta.dignify.domain.Genre;
-import com.rta.dignify.domain.Track;
-import com.rta.dignify.domain.User;
-import com.rta.dignify.domain.UserGenre;
+import com.rta.dignify.domain.*;
 import com.rta.dignify.dto.feed.FeedCursor;
 import com.rta.dignify.dto.feed.FeedItem;
 import com.rta.dignify.dto.feed.FeedResponse;
@@ -22,6 +19,7 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+
 
 @DataJpaTest
 @Import({JpaAuditingConfig.class, FeedService.class})
@@ -193,5 +191,40 @@ public class FeedServiceTest {
         assertThat(fetch5.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(expectedIdsInCountryLast);
         assertThat(fetch5.nextCursor()).isNull();
         assertThat(fetch5.hasMore()).isFalse();
+    }
+
+    @Test
+    @DisplayName("피드 검색 기능 테스트")
+    void feedServiceTest() {
+        List<Track> testRockTracks = createTracks("search-rock", rockGenre, Instant.now());
+        UserHypeTrack userHypeRockTrack = UserHypeTrack.create(user, testRockTracks.get(1));
+        entityManager.persistAndFlush(userHypeRockTrack);
+
+        List<Track> testBalladTracks = createTracks("search-ballad", balladGenre, Instant.now());
+        UserHypeTrack userHypeBalladTrack = UserHypeTrack.create(user, testBalladTracks.get(1));
+        entityManager.persistAndFlush(userHypeBalladTrack);
+
+        testRockTracks.addAll(testBalladTracks);
+
+        // 1. 커서 문자열 null 조회
+        FeedResponse fetch1 = feedService.searchFeedList(user.getId(), null, "search");
+        assertThat(fetch1.items().get(1).isHyped()).isTrue();
+        assertThat(fetch1.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(testRockTracks.subList(0, 10).stream().map(Track::getId).toList());
+
+        // 2. 1차 순회
+        FeedResponse fetch2 = feedService.searchFeedList(user.getId(), fetch1.nextCursor(), "search");
+        assertThat(fetch2.items().get(6).isHyped()).isTrue();
+        assertThat(fetch2.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(Stream.concat(testRockTracks.subList(10, 15).stream(), testBalladTracks.subList(0, 5).stream()).map(Track::getId).toList());
+
+        // 3. 2차 순회
+        FeedResponse fetch3 = feedService.searchFeedList(user.getId(), fetch2.nextCursor(), "search");
+        assertThat(fetch3.items()).extracting(FeedItem::isHyped).doesNotContain(true);
+        assertThat(fetch3.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(testBalladTracks.subList(5, 15).stream().map(Track::getId).toList());
+        assertThat(fetch3.hasMore()).isTrue();
+
+        // 최종 순회
+        FeedResponse fetch4 = feedService.searchFeedList(user.getId(), fetch3.nextCursor(), "search");
+        assertThat(fetch4.items()).isEmpty();
+        assertThat(fetch4.hasMore()).isFalse();
     }
 }
