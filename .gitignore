@@ -44,6 +44,12 @@ out/
 # API spec
 openapi.yaml
 
+# Gradle task output stubs
+Get
+Process
+Run
+Task
+
 # Environment / Secrets
 .env
 application-local.properties

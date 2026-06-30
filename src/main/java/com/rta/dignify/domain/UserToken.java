@@ -9,7 +9,8 @@ import org.hibernate.annotations.OnDeleteAction;
 
 import java.time.Instant;
 
-@Table(name = "user_tokens")
+@Table(name = "user_tokens",
+        indexes = @Index(name = "idx_user_token_user_id", columnList = "user_id"))
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

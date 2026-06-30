@@ -8,7 +8,9 @@ import org.hibernate.annotations.Cascade;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
-@Table(name = "user_auth", uniqueConstraints = {@UniqueConstraint(name = "uq_provider_user_id", columnNames = {"provider", "provider_user_id"})})
+@Table(name = "user_auth",
+        uniqueConstraints = {@UniqueConstraint(name = "uq_provider_user_id", columnNames = {"provider", "provider_user_id"})},
+        indexes = @Index(name = "idx_user_auth_user_id", columnList = "user_id"))
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

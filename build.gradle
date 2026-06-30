@@ -31,6 +31,9 @@ dependencies {
 	// Apple identityToken 검증 (JWKS)
 	implementation 'com.nimbusds:nimbus-jose-jwt:9.40'
 
+	// Cloud SQL (Cloud Run → Cloud SQL Unix socket 연결)
+	implementation 'com.google.cloud.sql:postgres-socket-factory:1.14.0'
+
 	compileOnly 'org.projectlombok:lombok'
 	testImplementation 'com.h2database:h2'
 	runtimeOnly 'org.postgresql:postgresql'

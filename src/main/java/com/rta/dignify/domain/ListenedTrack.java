@@ -7,7 +7,11 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
-@Table(name = "listened_tracks")
+@Table(name = "listened_tracks",
+        indexes = {
+                @Index(name = "idx_listened_track_user_id", columnList = "user_id"),
+                @Index(name = "idx_listened_track_track_id", columnList = "track_id")
+        })
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

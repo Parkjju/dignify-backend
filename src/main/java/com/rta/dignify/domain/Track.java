@@ -11,7 +11,9 @@ import com.rta.dignify.dto.itunes.ItunesItem;
 import java.time.Instant;
 import java.util.Optional;
 
-@Table(name = "tracks", uniqueConstraints = @UniqueConstraint(name = "uq_external_source", columnNames = {"external_id", "source"}))
+@Table(name = "tracks",
+        uniqueConstraints = @UniqueConstraint(name = "uq_external_source", columnNames = {"external_id", "source"}),
+        indexes = @Index(name = "idx_track_genre_id", columnList = "genre_id"))
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
