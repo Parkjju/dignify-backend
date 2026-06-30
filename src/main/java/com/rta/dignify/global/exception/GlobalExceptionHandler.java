@@ -1,5 +1,6 @@
 package com.rta.dignify.global.exception;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -9,18 +10,23 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    /**
-     *
-     * @param e DataIntegrityViolation 예외
-     * @return 409 응답
-     */
-    @ResponseStatus(HttpStatus.CONFLICT)
     @ExceptionHandler
-    public ErrorResponse handleDataIntegrityViolationException(DataIntegrityViolationException e) {
-        return ErrorResponse.from(ErrorCode.DATA_INTEGRITY_VIOLATION);
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolationException(DataIntegrityViolationException e) {
+        Throwable cause = e.getCause();
+        while (cause != null) {
+            if (cause instanceof java.sql.SQLException sqlEx && "23505".equals(sqlEx.getSQLState())) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(ErrorResponse.from(ErrorCode.DATA_INTEGRITY_VIOLATION));
+            }
+            cause = cause.getCause();
+        }
+        log.error("Data integrity violation", e);
+        return ResponseEntity.internalServerError()
+                .body(ErrorResponse.from(ErrorCode.INTERNAL_SERVER_ERROR));
     }
 
     /**
@@ -64,6 +70,7 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     @ExceptionHandler
     public ErrorResponse handleInternalServerException(Exception e) {
+        log.error("Unhandled exception", e);
         return ErrorResponse.from(ErrorCode.INTERNAL_SERVER_ERROR);
     }
 }
