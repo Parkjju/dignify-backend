@@ -3,6 +3,8 @@ package com.rta.dignify.client.itunes;
 import com.rta.dignify.dto.itunes.ItunesItem;
 import com.rta.dignify.dto.itunes.ItunesLookupResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -15,8 +17,18 @@ public class ITunesAPIClient {
     private final RestClient restClient;
 
     public ITunesAPIClient() {
+        MappingJackson2HttpMessageConverter converter = new MappingJackson2HttpMessageConverter();
+        converter.setSupportedMediaTypes(List.of(
+                MediaType.APPLICATION_JSON,
+                MediaType.valueOf("text/javascript")
+        ));
+
         this.restClient = RestClient.builder()
                 .baseUrl("https://itunes.apple.com")
+                .messageConverters(converters -> {
+                    converters.removeIf(c -> c instanceof MappingJackson2HttpMessageConverter);
+                    converters.add(converter);
+                })
                 .build();
     }
 
