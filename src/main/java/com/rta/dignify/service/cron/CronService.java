@@ -13,24 +13,31 @@ import org.springframework.web.client.ResourceAccessException;
 @Service
 public class CronService {
     private final CronBatchService cronBatchService;
-    private static final int MAX_BATCHES_PER_RUN = 100;
 
     @Async
-    public void callItunesAPI(String jobName) throws InterruptedException {
-        int processedSize = 0;
+    public void callItunesAPI(String jobName, long endIndex) throws InterruptedException {
+        int totalProcessed = 0;
+        int batchCount = 0;
 
-        for (int i = 0; i < MAX_BATCHES_PER_RUN; i++) {
+        while (true) {
             try {
                 CronBatchService.ProcessResult result = cronBatchService.processBatch(jobName);
-                processedSize += result.processedSize();
-                log.info("Batch {}/{} done — processed: {}, lastId: {}", i + 1, MAX_BATCHES_PER_RUN, result.processedSize(), result.lastProcessedId());
+                batchCount++;
+                totalProcessed += result.processedSize();
+                log.info("Batch {} done — processed: {}, lastId: {}", batchCount, result.processedSize(), result.lastProcessedId());
+
+                if (result.lastProcessedId() >= endIndex) {
+                    log.info("Cron job '{}' reached endIndex {}. total processed: {}", jobName, endIndex, totalProcessed);
+                    break;
+                }
+
                 Thread.sleep(30000);
             } catch (ResourceAccessException e) {
-                log.warn("iTunes API connection dropped after {} batches: {}", i, e.getMessage());
+                log.warn("iTunes API connection dropped after {} batches: {}", batchCount, e.getMessage());
                 break;
             }
         }
 
-        log.info("Cron job '{}' finished — total processed: {}", jobName, processedSize);
+        log.info("Cron job '{}' finished — total processed: {}", jobName, totalProcessed);
     }
 }

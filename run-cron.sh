@@ -1,6 +1,13 @@
 #!/bin/bash
 set -e
 
+if [ -z "$1" ]; then
+    echo "Usage: ./run-cron.sh <endIndex>"
+    echo "Example: ./run-cron.sh 50000000"
+    exit 1
+fi
+END_INDEX="$1"
+
 set -a && source .env && set +a
 
 PROXY_PORT=5433
@@ -62,7 +69,7 @@ done
 # 크론잡 트리거
 echo "[cron] Triggering cron job..."
 RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-    -X POST "http://localhost:$APP_PORT/internal/cron/collect" \
+    -X POST "http://localhost:$APP_PORT/internal/cron/collect?endIndex=$END_INDEX" \
     -H "X-Cron-Secret: $CRON_SECRET")
 
 if [ "$RESPONSE" != "202" ]; then
