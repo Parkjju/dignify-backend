@@ -1,9 +1,8 @@
 package com.rta.dignify.service.cron;
 
-import com.rta.dignify.global.exception.BusinessException;
-import com.rta.dignify.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.ResourceAccessException;
@@ -34,6 +33,9 @@ public class CronService {
                 Thread.sleep(30000);
             } catch (ResourceAccessException e) {
                 log.warn("iTunes API connection dropped after {} batches: {}", batchCount, e.getMessage());
+                break;
+            } catch (DataAccessException e) {
+                log.error("DB connection lost after {} batches: {}", batchCount, e.getMessage());
                 break;
             }
         }

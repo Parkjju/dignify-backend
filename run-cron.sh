@@ -26,7 +26,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # 절전 방지
-caffeinate -i &
+caffeinate -s &
 CAFFEINATE_PID=$!
 echo "[cron] Caffeinate started (PID $CAFFEINATE_PID)"
 
