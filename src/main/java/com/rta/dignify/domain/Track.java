@@ -9,6 +9,7 @@ import org.hibernate.annotations.OnDeleteAction;
 
 import com.rta.dignify.dto.itunes.ItunesItem;
 import java.time.Instant;
+import java.util.Optional;
 
 @Table(name = "tracks", uniqueConstraints = @UniqueConstraint(name = "uq_external_source", columnNames = {"external_id", "source"}))
 @Entity
@@ -24,23 +25,23 @@ public class Track extends BaseTimeEntity {
     @Column(name = "external_id", nullable = false)
     private String externalId;
 
-    @Column(name = "artist_name", nullable = false)
+    @Column(name = "artist_name", nullable = false, columnDefinition = "TEXT")
     private String artistName;
 
-    @Column(name = "collection_name", nullable = false)
+    @Column(name = "collection_name", nullable = false, columnDefinition = "TEXT")
     private String collectionName;
 
-    @Column(name = "track_name", nullable = false)
+    @Column(name = "track_name", nullable = false, columnDefinition = "TEXT")
     private String trackName;
 
-    @Column(name = "preview_url", nullable = false)
+    @Column(name = "preview_url", nullable = false, columnDefinition = "TEXT")
     private String previewUrl;
 
     // 애플뮤릭 연결 URL
-    @Column(name = "track_view_url", nullable = false)
+    @Column(name = "track_view_url", nullable = false, columnDefinition = "TEXT")
     private String trackViewUrl;
 
-    @Column(name = "artwork_url", nullable = false)
+    @Column(name = "artwork_url", nullable = false, columnDefinition = "TEXT")
     private String artworkUrl;
 
     @Column(name = "release_date", nullable = false)
@@ -78,8 +79,12 @@ public class Track extends BaseTimeEntity {
         return new Track(externalId, artistName, collectionName, trackName, previewUrl, trackViewUrl, artworkUrl, releaseDate, genre, country, source);
     }
 
-    public static Track from(ItunesItem item, Genre genre) {
-        return new Track(
+    public static Optional<Track> from(ItunesItem item, Genre genre) {
+        if (item.artistName() == null || item.collectionName() == null || item.trackName() == null
+                || item.trackViewUrl() == null || item.artworkUrl100() == null || item.releaseDate() == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new Track(
                 String.valueOf(item.trackId()),
                 item.artistName(),
                 item.collectionName(),
@@ -91,6 +96,6 @@ public class Track extends BaseTimeEntity {
                 genre,
                 item.country(),
                 "ITUNES"
-        );
+        ));
     }
 }
