@@ -60,8 +60,13 @@ public class AuthService {
             // 삭제된 유저가 apple login으로 재가입
             // soft delete 데이터 전체 삭제 후 가입처리
             if (user.getDeletedAt() != null) {
+                // Apple은 재로그인 토큰에 email을 넣어주지 않으므로 기존 유저 email 재사용
+                String existingEmail = user.getEmail();
                 userRepository.delete(user);
-                user = saveNewUserAndAuth(email, appleId);
+                // Hibernate 기본 flush 순서는 INSERT가 DELETE보다 먼저라, 같은 email/appleId로
+                // 재가입 시 unique 제약에 걸린다. delete를 먼저 반영하도록 강제 flush.
+                userRepository.flush();
+                user = saveNewUserAndAuth(existingEmail, appleId);
             }
         }
 

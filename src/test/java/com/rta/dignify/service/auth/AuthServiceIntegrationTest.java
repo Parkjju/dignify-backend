@@ -92,6 +92,46 @@ class AuthServiceIntegrationTest {
         assertThat(reLoginUser.accessToken()).isNotNull();
     }
 
+    @Test
+    @DisplayName("탈퇴 후 재로그인 - Apple이 email을 안 주면 기존 유저 email 재사용")
+    @Transactional
+    void reSignUpReusesEmailWhenTokenHasNoEmail() {
+        String testToken = "test-token";
+        String appleId = "test-apple-id";
+        String originalEmail = "reuse@gmail.com";
+
+        // 1회차(신규가입)는 email 있음, 2회차(재로그인)는 Apple이 email을 안 줌(null).
+        // Apple은 identity token의 email 클레임을 "최초 인증" 때만 넣어주므로 재로그인 토큰엔 email이 없다.
+        given(appleAuthClient.verifyIdentityToken(testToken))
+                .willReturn(new AppleIdentity(originalEmail, appleId))
+                .willReturn(new AppleIdentity(null, appleId));
+        given(jwtProvider.generateAccessToken(any())).willReturn("access-token");
+        given(jwtProvider.generateRefreshToken(any()))
+                .willReturn("refresh-token1")
+                .willReturn("refresh-token2");
+        given(jwtProvider.getAccessTokenExpiration()).willReturn(3600000L);
+        given(jwtProvider.getRefreshTokenExpiration()).willReturn(2592000000L);
+
+        // 신규 가입 → email 저장 확인
+        authService.signInWithApple(testToken);
+        User created = userRepository.findAll().getFirst();
+        assertThat(created.getEmail()).isEqualTo(originalEmail);
+
+        // soft delete
+        created.deleteUser();
+
+        // 재로그인: email이 null인 토큰으로도 NOT NULL 위반 없이 재가입되고, 기존 email을 재사용해야 함
+        AuthTokenResponse reLogin = authService.signInWithApple(testToken);
+        assertThat(reLogin.accessToken()).isNotNull();
+        assertThat(reLogin.refreshToken()).isNotNull();
+
+        // 기존 유저는 hard delete되고 새 유저가 같은 email로 생성됨
+        List<User> users = userRepository.findAll();
+        assertThat(users).hasSize(1);
+        assertThat(users.getFirst().getEmail()).isEqualTo(originalEmail);
+        assertThat(users.getFirst().getDeletedAt()).isNull();
+    }
+
     // 1. testToken으로 refreshToken 호출 - DB에 매칭되는 UserToken 없어 AUTH_TOKEN_INVALID 발생
     // 2. hashedRefreshTestToken1로 UserToken 엔티티 생성 및 저장 (DB 조회 성공 케이스 준비)
     // 3. testToken으로 refreshToken 재호출
