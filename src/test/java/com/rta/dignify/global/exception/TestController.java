@@ -19,7 +19,9 @@ public class TestController {
 
     @GetMapping("/test/data-integrity")
     void throwDataIntegrity() {
-        throw new DataIntegrityViolationException("test");
+        // 핸들러는 SQLState 23505(unique 위반) cause가 있을 때만 409로 매핑한다
+        throw new DataIntegrityViolationException("test",
+                new java.sql.SQLException("duplicate key", "23505"));
     }
 
     @PostMapping("/test/method-argument-not-valid")
