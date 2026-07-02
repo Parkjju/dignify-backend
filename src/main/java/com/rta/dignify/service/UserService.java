@@ -53,6 +53,7 @@ public class UserService {
     @Transactional
     public void changeUserGenres(Long userId, PreferGenreUpdateRequest request) {
         userGenreRepository.deleteByUser_Id(userId);
+        userGenreRepository.flush();   // DELETE를 INSERT보다 먼저 DB에 반영(uq_user_genre_id 충돌 방지)
         User user = userRepository.getReferenceById(userId);
         request.genreIds().forEach(genreId -> {
             Genre dbGenre = genreRepository.findById(genreId)
