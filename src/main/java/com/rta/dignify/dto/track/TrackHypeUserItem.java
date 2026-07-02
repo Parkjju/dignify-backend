@@ -1,4 +1,6 @@
 package com.rta.dignify.dto.track;
 
-public record TrackHypeUserItem(Long userId, String nickname) {
+import java.time.Instant;
+
+public record TrackHypeUserItem(Long userId, String nickname, Instant hypedAt) {
 }

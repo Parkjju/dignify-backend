@@ -24,7 +24,7 @@ public record TrackDetailResponse(Long trackId, String trackName, String artistN
                 break;
         }
 
-        List<TrackHypeUserItem> trackHypeUserItems = userHypeTracks.stream().map((userHypeTrack -> new TrackHypeUserItem(userHypeTrack.getUser().getId(), userHypeTrack.getUser().getNickname()))).toList();
+        List<TrackHypeUserItem> trackHypeUserItems = userHypeTracks.stream().map((userHypeTrack -> new TrackHypeUserItem(userHypeTrack.getUser().getId(), userHypeTrack.getUser().getNickname(), userHypeTrack.getCreatedAt()))).toList();
 
         return new TrackDetailResponse(
                 track.getId(),
