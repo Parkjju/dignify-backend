@@ -29,7 +29,7 @@ class GenreServiceTest {
     void getGenreList() {
         Genre genre1 = Genre.create("Rock", "락");
         Genre genre2 = Genre.create("Ballad", "발라드");
-        given(genreRepository.findAll()).willReturn(List.of(genre1, genre2));
+        given(genreRepository.findGenresWithActiveTracks()).willReturn(List.of(genre1, genre2));
 
         GenreListResponse response = genreService.getGenreList();
         assertThat(response.genres()).hasSize(2);

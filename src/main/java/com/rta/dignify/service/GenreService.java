@@ -17,7 +17,7 @@ public class GenreService {
 
     @Transactional(readOnly = true)
     public GenreListResponse getGenreList() {
-        List<Genre> genres = genreRepository.findAll();
+        List<Genre> genres = genreRepository.findGenresWithActiveTracks();
         List<GenreResponse> genreResponses = genres.stream()
                 .map(GenreResponse::from)
                 .toList();
