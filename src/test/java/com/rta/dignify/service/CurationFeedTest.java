@@ -98,16 +98,15 @@ public class CurationFeedTest {
 
         FeedResponse res = feedService.getFeedList(user.getId(), null);
 
-        // 1등 = 큐레이션 트랙, 이후 나머지 rock 트랙이 track_id 순으로 9개
-        List<Long> expected = new ArrayList<>();
-        expected.add(boosted.getId());
-        rockTracks.stream()
-                .filter(t -> !t.getId().equals(boosted.getId()))
-                .limit(9)
+        // 1등 = 큐레이션 트랙(priority로 결정적), 나머지 9개는 seed 셔플이므로 rock 집합만 검증
+        List<Long> otherRockIds = rockTracks.stream()
                 .map(Track::getId)
-                .forEach(expected::add);
+                .filter(id -> !id.equals(boosted.getId()))
+                .toList();
 
-        assertThat(res.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(expected);
+        assertThat(res.items()).hasSize(10);
+        assertThat(res.items().get(0).trackId()).isEqualTo(boosted.getId());
+        assertThat(res.items().subList(1, 10)).extracting(FeedItem::trackId).isSubsetOf(otherRockIds);
     }
 
     @Test
@@ -129,12 +128,16 @@ public class CurationFeedTest {
     void inactiveCurationIsNotBoosted() {
         entityManager.persistAndFlush(UserGenre.create(user, rockGenre));
         Track inactive = rockTracks.get(10);
-        curate(inactive, 100, false);
+        curate(inactive, 100, false);   // 높은 우선순위지만 비활성
+
+        // 낮은 우선순위의 활성 대조 트랙: 비활성 큐레이션이 무시되면 이 트랙이 최상단이어야 함
+        Track control = rockTracks.get(0);
+        curate(control, 10, true);
 
         FeedResponse res = feedService.getFeedList(user.getId(), null);
 
-        // 비활성 큐레이션은 무시 → 평범한 track_id 순(rock-1..rock-10)
-        List<Long> expected = rockTracks.subList(0, 10).stream().map(Track::getId).toList();
-        assertThat(res.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(expected);
+        // inactive(100)가 무시되므로 활성 control(10)이 최상단 (셔플 무관, priority로 결정적)
+        assertThat(res.items().get(0).trackId()).isEqualTo(control.getId());
+        assertThat(res.items()).hasSize(10);
     }
 }

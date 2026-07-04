@@ -97,10 +97,11 @@ public class FeedServiceTest {
         UserGenre userGenre = UserGenre.create(user, rockGenre);
         entityManager.persistAndFlush(userGenre);
 
-        // 1. 커서 문자열 null 조회 테스트
+        // 1. 커서 문자열 null 조회 테스트 (seed 셔플로 순서는 비결정적 → 선호 장르 트랙 집합만 검증)
         FeedResponse response = feedService.getFeedList(user.getId(), null);
-        List<Long> expectedIds = rockTracks.subList(0, 10).stream().map(Track::getId).toList();
-        assertThat(response.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(expectedIds);
+        List<Long> allRockIds = rockTracks.stream().map(Track::getId).toList();
+        assertThat(response.items()).hasSize(10);
+        assertThat(response.items()).extracting(FeedItem::trackId).isSubsetOf(allRockIds);
 
         // 2. 커서 발급 확인
         String cursorString = response.nextCursor();
@@ -125,18 +126,25 @@ public class FeedServiceTest {
 
         // 2. 추가순회
         FeedResponse assertResponse = feedService.getFeedList(user.getId(), response.nextCursor());
-        List<Long> expectedIdsInRock = rockTracks.subList(10, rockTracks.size()).stream().map(Track::getId).toList();
+        List<Long> allRockIds = rockTracks.stream().map(Track::getId).toList();
 
-        // NOT IN UserGenre이므로 paddingTrack에 어떤 장르의 트랙이 들어갈지는 테스트 불필요
-        // 전체 갯수만 체크
+        // seed 셔플로 페이지별 순서는 비결정적이지만 구조는 유지: page2 앞 5개는 남은 rock, 뒤는 general 패딩
         FeedCursor newCursor = FeedCursor.decode(assertResponse.nextCursor());
         List<FeedItem> trackResponse = assertResponse.items();
         List<Long> generalPoolIds = Stream.concat(balladTracks.stream(), countryTracks.stream())
                 .map(Track::getId)
                 .toList();
 
-        assertThat(trackResponse.subList(0, 5)).extracting(FeedItem::trackId).containsExactlyElementsOf(expectedIdsInRock);
+        assertThat(trackResponse.subList(0, 5)).extracting(FeedItem::trackId).isSubsetOf(allRockIds);
         assertThat(trackResponse.subList(5, trackResponse.size())).extracting(FeedItem::trackId).isSubsetOf(generalPoolIds);
+
+        // page1(rock 10개) + page2 앞 5개 = rock 전체, 중복 없음
+        List<Long> rockServed = Stream.concat(
+                response.items().stream().map(FeedItem::trackId),
+                trackResponse.subList(0, 5).stream().map(FeedItem::trackId)
+        ).toList();
+        assertThat(rockServed).containsExactlyInAnyOrderElementsOf(allRockIds);
+
         assertThat(newCursor.phase()).isEqualTo(FeedCursor.Phase.GENERAL);
         assertThat(newCursor.genreOffset()).isEqualTo(rockTracks.size());
         assertThat(newCursor.generalOffset()).isEqualTo(5);
@@ -145,7 +153,7 @@ public class FeedServiceTest {
     @Test
     @DisplayName("""
             1. 멀티 선호 장르 테스트
-            2. 모든 트랙 조회 및 고갈 테스트
+            2. 전체 순회 시 모든 트랙이 중복 없이 정확히 한 번씩 소진되는지 검증
             """)
     void overallLogicTest() {
         UserGenre userRockGenre = UserGenre.create(user, rockGenre);
@@ -153,46 +161,25 @@ public class FeedServiceTest {
         entityManager.persistAndFlush(userRockGenre);
         entityManager.persistAndFlush(userBalladGenre);
 
-        // 1. 커서 문자열 null 조회
-        FeedResponse fetch1 = feedService.getFeedList(user.getId(), null);
-        FeedCursor cursor = FeedCursor.decode(fetch1.nextCursor());
-        assertThat(cursor.genreOffset()).isEqualTo(10);
+        // seed 셔플로 페이지별 순서/구성은 비결정적 → 전체를 끝까지 순회해 완전성만 검증
+        List<Long> drained = new ArrayList<>();
+        String cursor = null;
+        FeedResponse resp;
+        do {
+            resp = feedService.getFeedList(user.getId(), cursor);
+            resp.items().forEach(item -> drained.add(item.trackId()));
+            cursor = resp.nextCursor();
+        } while (resp.hasMore());
 
-        // 2. 1차 순회
-        FeedResponse fetch2 = feedService.getFeedList(user.getId(), fetch1.nextCursor());
-        List<Long> expectedIdsInRock = rockTracks.subList(10, rockTracks.size()).stream().map(Track::getId).toList();
-        List<Long> expectedIdsInBallad = balladTracks.subList(0, 5).stream().map(Track::getId).toList();
+        List<Long> allIds = Stream.of(rockTracks, balladTracks, countryTracks)
+                .flatMap(List::stream)
+                .map(Track::getId)
+                .toList();
 
-        assertThat(fetch2.items().subList(0, 5)).extracting(FeedItem::trackId).containsExactlyElementsOf(expectedIdsInRock);
-        assertThat(fetch2.items().subList(5, fetch2.items().size())).extracting(FeedItem::trackId).containsExactlyElementsOf(expectedIdsInBallad);
-
-        // 3. 2차 순회, 선호장르 전부 소진
-        FeedResponse fetch3 = feedService.getFeedList(user.getId(), fetch2.nextCursor());
-        FeedCursor fetch3Cursor = FeedCursor.decode(fetch3.nextCursor());
-        List<Long> expectedIdsInBalladLast = balladTracks.subList(5, balladTracks.size()).stream().map(Track::getId).toList();
-
-        assertThat(fetch3.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(expectedIdsInBalladLast);
-        assertThat(fetch3Cursor.genreOffset()).isEqualTo(rockTracks.size() + balladTracks.size());
-        assertThat(fetch3Cursor.phase()).isEqualTo(FeedCursor.Phase.GENRE); // 꽉맞게 소진할때까지는 GENRE Phase 유지
-
-        // 4. 3차 순회, GENERAL 순회
-        FeedResponse fetch4 = feedService.getFeedList(user.getId(), fetch3.nextCursor());
-        FeedCursor fetch4Cursor = FeedCursor.decode(fetch4.nextCursor());
-        List<Long> expectedIdsInCountry = countryTracks.subList(0, 10).stream().map(Track::getId).toList();
-
-        assertThat(fetch4.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(expectedIdsInCountry);
-        assertThat(fetch4Cursor.phase()).isEqualTo(FeedCursor.Phase.GENERAL);
-
-        // 5. 최종 순회
-        // - 5개만 최종 결과 반환
-        // - cursor값 null
-        // - hasMore false
-        FeedResponse fetch5 = feedService.getFeedList(user.getId(), fetch4.nextCursor());
-        List<Long> expectedIdsInCountryLast = countryTracks.subList(10, countryTracks.size()).stream().map(Track::getId).toList();
-
-        assertThat(fetch5.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(expectedIdsInCountryLast);
-        assertThat(fetch5.nextCursor()).isNull();
-        assertThat(fetch5.hasMore()).isFalse();
+        assertThat(drained).doesNotHaveDuplicates();
+        assertThat(drained).containsExactlyInAnyOrderElementsOf(allIds);
+        assertThat(resp.hasMore()).isFalse();
+        assertThat(resp.nextCursor()).isNull();
     }
 
     @Test

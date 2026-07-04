@@ -35,7 +35,7 @@ public class FeedService {
         }
 
         if (currentCursor.phase() == FeedCursor.Phase.GENRE) {
-            result = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(userId, FeedService.FETCH_LIMIT, currentCursor.genreOffset());
+            result = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(userId, FeedService.FETCH_LIMIT, currentCursor.genreOffset(), currentCursor.seed());
         } else {
             result = new ArrayList<>();
         }
@@ -46,7 +46,7 @@ public class FeedService {
             response = new FeedResponse(feedItems, newCursor.encode(), true);
         } else {
             // 장르 조회에서 부족한 결과를 general 조회로 채우기
-            List<Track> paddingResponse = trackRepository.findGeneralTracksByGenreIdsExceptHypedTrackWithLimitAndOffset(userId, FETCH_LIMIT - result.size(), currentCursor.generalOffset());
+            List<Track> paddingResponse = trackRepository.findGeneralTracksByGenreIdsExceptHypedTrackWithLimitAndOffset(userId, FETCH_LIMIT - result.size(), currentCursor.generalOffset(), currentCursor.seed());
             result.addAll(paddingResponse);
             List<FeedItem> feedItems = result.stream().map((track) -> FeedItem.from(track, false)).toList();
             newCursor = new FeedCursor(FeedCursor.Phase.GENERAL, currentCursor.genreOffset() + (FETCH_LIMIT - paddingResponse.size()), currentCursor.generalOffset() + paddingResponse.size(), currentCursor.seed());

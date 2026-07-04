@@ -13,20 +13,20 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
             "JOIN user_genres ug ON ug.genre_id = t.genre_id AND ug.user_id = :userId " +
             "LEFT JOIN curation_tracks c ON c.track_id = t.track_id AND c.is_active IS TRUE " +
             "WHERE uht.user_hype_track_id IS NULL AND t.is_active IS TRUE " +
-            "ORDER BY COALESCE(c.priority, 0) DESC, t.track_id " +
+            "ORDER BY COALESCE(c.priority, 0) DESC, md5(t.track_id::text || ':' || CAST(:seed AS text)) " +
             "LIMIT :limit " +
             "OFFSET :offset", nativeQuery = true)
-    List<Track> findByGenreIdsExceptHypedTrackWithLimitAndOffset(@Param("userId") Long userId, @Param("limit") Integer limit, @Param("offset") Integer offset);
+    List<Track> findByGenreIdsExceptHypedTrackWithLimitAndOffset(@Param("userId") Long userId, @Param("limit") Integer limit, @Param("offset") Integer offset, @Param("seed") Integer seed);
 
     @Query(value = "SELECT t.* FROM tracks t " +
             "LEFT JOIN users_hype_tracks uht ON t.track_id = uht.track_id AND uht.user_id = :userId " +
             "LEFT JOIN user_genres ug ON ug.genre_id = t.genre_id AND ug.user_id = :userId " +
             "LEFT JOIN curation_tracks c ON c.track_id = t.track_id AND c.is_active IS TRUE " +
             "WHERE uht.user_hype_track_id IS NULL AND t.is_active IS TRUE AND ug.user_genre_id IS NULL " +
-            "ORDER BY COALESCE(c.priority, 0) DESC, t.track_id " +
+            "ORDER BY COALESCE(c.priority, 0) DESC, md5(t.track_id::text || ':' || CAST(:seed AS text)) " +
             "LIMIT :limit " +
             "OFFSET :offset", nativeQuery = true)
-    List<Track> findGeneralTracksByGenreIdsExceptHypedTrackWithLimitAndOffset(@Param("userId") Long userId, @Param("limit") Integer limit, @Param("offset") Integer offset);
+    List<Track> findGeneralTracksByGenreIdsExceptHypedTrackWithLimitAndOffset(@Param("userId") Long userId, @Param("limit") Integer limit, @Param("offset") Integer offset, @Param("seed") Integer seed);
 
     @Query(value = "SELECT t FROM Track t " +
             "WHERE (t.artistName LIKE %:searchKeyword% OR t.trackName LIKE %:searchKeyword% ) AND t.isActive = TRUE " +
