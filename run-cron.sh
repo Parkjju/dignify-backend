@@ -25,8 +25,9 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# 절전 방지
-caffeinate -s &
+# 절전 방지 (d=디스플레이 i=idle m=디스크 s=시스템 u=user-active)
+# 단, 배터리+뚜껑닫힘 케이스는 못 막음 — 오래 돌릴 땐 전원 꽂고 뚜껑 열어둘 것
+caffeinate -dimsu &
 CAFFEINATE_PID=$!
 echo "[cron] Caffeinate started (PID $CAFFEINATE_PID)"
 

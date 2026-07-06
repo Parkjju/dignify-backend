@@ -1,5 +1,7 @@
 package com.rta.dignify.service.cron;
 
+import com.rta.dignify.client.itunes.ITunesAPIClient;
+import com.rta.dignify.dto.itunes.ItunesItem;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
@@ -7,11 +9,15 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.ResourceAccessException;
 
+import java.util.List;
+import java.util.stream.LongStream;
+
 @Slf4j
 @RequiredArgsConstructor
 @Service
 public class CronService {
     private final CronBatchService cronBatchService;
+    private final ITunesAPIClient iTunesAPIClient;
 
     @Async
     public void callItunesAPI(String jobName, long endIndex) throws InterruptedException {
@@ -20,7 +26,12 @@ public class CronService {
 
         while (true) {
             try {
-                CronBatchService.ProcessResult result = cronBatchService.processBatch(jobName);
+                // 외부 API 호출은 트랜잭션 밖에서. DB 커넥션을 쥔 채 iTunes 응답을 기다리지 않도록 분리.
+                long startId = cronBatchService.peekNextStartId(jobName);
+                List<ItunesItem> items = iTunesAPIClient.lookup(
+                        LongStream.range(startId, startId + 200).boxed().toList());
+
+                CronBatchService.ProcessResult result = cronBatchService.processBatch(jobName, items);
                 batchCount++;
                 totalProcessed += result.processedSize();
                 log.info("Batch {} done — processed: {}, lastId: {}", batchCount, result.processedSize(), result.lastProcessedId());

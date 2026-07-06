@@ -1,6 +1,5 @@
 package com.rta.dignify.service.cron;
 
-import com.rta.dignify.client.itunes.ITunesAPIClient;
 import com.rta.dignify.domain.CronState;
 import com.rta.dignify.domain.Track;
 import com.rta.dignify.dto.itunes.ItunesItem;
@@ -18,7 +17,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.stream.LongStream;
 
 @RequiredArgsConstructor
 @Slf4j
@@ -26,18 +24,24 @@ import java.util.stream.LongStream;
 public class CronBatchService {
     private final GenreRepository genreRepository;
     private final TrackRepository trackRepository;
-    private final ITunesAPIClient iTunesAPIClient;
     private final CronStateRepository cronStateRepository;
     private final TrackSaveService trackSaveService;
 
+    // iTunes lookup 범위의 시작 id. HTTP 호출은 트랜잭션 밖(CronService)에서 하도록 id만 먼저 내줌.
+    @Transactional(readOnly = true)
+    public long peekNextStartId(String jobName) {
+        CronState cronState = cronStateRepository.findByJobName(jobName).orElseThrow(() -> new BusinessException(ErrorCode.CRON_JOB_NOT_FOUND));
+        return cronState.getLastProcessedId() != null ? cronState.getLastProcessedId() + 1 : 1L;
+    }
+
+    // 이미 조회된 iTunes 결과만 받아 DB에 적재. 트랜잭션 안에 외부 HTTP 호출 없음.
     @Transactional
-    public ProcessResult processBatch(String jobName) {
+    public ProcessResult processBatch(String jobName, List<ItunesItem> itunesItemList) {
         CronState cronState = cronStateRepository.findByJobName(jobName).orElseThrow(() -> new BusinessException(ErrorCode.CRON_JOB_NOT_FOUND));
         long lastProcessedId = cronState.getLastProcessedId() != null
                 ? cronState.getLastProcessedId() + 1
                 : 1L;
 
-        List<ItunesItem> itunesItemList = iTunesAPIClient.lookup(LongStream.range(lastProcessedId, lastProcessedId + 200).boxed().toList());
         List<Track> tracks = List.of();
         if (!itunesItemList.isEmpty()) {
             Set<Long> seenTrackIds = new HashSet<>();
