@@ -41,6 +41,7 @@ Designed a two-phase feed algorithm that prioritizes user-preferred genres (70%)
 - Phase 2: `LEFT JOIN user_genres ... WHERE IS NULL` anti-join pattern to serve non-preferred tracks
 - Cursor encodes `(phase, genreOffset, generalOffset, seed)` as a Base64 opaque string — client never parses the internals
 - Native queries with explicit `LIMIT`/`OFFSET` binding (JPQL doesn't support literal `LIMIT`)
+- Ordering: `ORDER BY COALESCE(c.priority, 0) DESC, md5(track_id || ':' || seed)` — curated tracks are boosted to the top via a `LEFT JOIN curation_tracks`, and the rest are shuffled by a per-session seed hashed with the track id. The seed makes ordering stable within a paging session but different across sessions, and hashing per-track breaks the artist clustering that a plain `ORDER BY id` produces
 
 ### 4. Asynchronous Cron Job with `@Async`
 Implemented a long-running iTunes track collection job that runs without blocking the HTTP thread:
@@ -74,6 +75,15 @@ PostgreSQL does not auto-create indexes on foreign key columns (unlike MySQL). E
 | `idx_user_auth_user_id` | `user_auth` | `user_id` | Auth provider lookup per login |
 | `idx_user_token_user_id` | `user_tokens` | `user_id` | Token validation per request |
 
+### 8. Test-Gated CI/CD to Cloud Run
+A GitHub Actions workflow (`.github/workflows/deploy.yml`) builds, tests, and deploys on every push to `main`:
+
+- **`test` job** spins up a `postgres:16` service container and runs `./gradlew test`. If tests fail, the workflow stops and `deploy` never runs.
+- **`deploy` job** (`needs: test`) authenticates to GCP via **Workload Identity Federation** (OIDC, `id-token: write`) — no long-lived service account keys stored in the repo.
+- Builds a `linux/amd64` image, pushes to Artifact Registry tagged with the commit SHA, and rolls it out to Cloud Run.
+
+> **Known limitation:** the CI Postgres uses the same `ddl-auto=create-drop` as tests, so the schema is regenerated from JPA entities each run. This validates that entities map cleanly, but does **not** catch drift against the production schema — there are no migrations yet. A Flyway/Liquibase baseline is the natural next step.
+
 ---
 
 ## Testing
@@ -106,6 +116,9 @@ Wrote tests at multiple layers with a clear separation of concerns between unit,
 **`@DataJpaTest` with `@Import(JpaAuditingConfig.class)`**  
 `@DataJpaTest` excludes custom `@Configuration` beans by default. `JpaAuditingConfig` must be explicitly imported, otherwise `created_at NOT NULL` violations occur at test time — the opposite problem of `@WebMvcTest`, where the same config class causes "JPA metamodel must not be empty."
 
+**`@DataJpaTest` pinned to real PostgreSQL**  
+`@DataJpaTest` swaps in an embedded H2 database by default. The feed queries use PostgreSQL-specific SQL (`md5()`, `::text` casts, native `LIMIT`/`OFFSET`), which H2 cannot execute. The slice is pinned to a real Postgres instance (`@AutoConfigureTestDatabase(replace = NONE)`) so repository tests exercise the exact SQL that runs in production — the same `postgres:16` container CI uses.
+
 ---
 
 ## API Overview
@@ -116,7 +129,7 @@ Wrote tests at multiple layers with a clear separation of concerns between unit,
 | POST | `/auth/refresh` | Rotate refresh token, issue new access token |
 | POST | `/auth/logout` | Invalidate refresh token |
 | POST | `/auth/withdraw` | Soft-delete account, cascade token cleanup |
-| GET | `/genres` | List genres (i18n: `Accept-Language` ko/en) |
+| GET | `/genres` | List genres that have active tracks (i18n: `Accept-Language` ko/en) |
 | GET | `/feed` | Paginated track feed with opaque cursor |
 | GET | `/feed/search` | Keyword search across track/artist name |
 | GET | `/tracks/{trackId}` | Track detail + first 5 users who hyped it |
