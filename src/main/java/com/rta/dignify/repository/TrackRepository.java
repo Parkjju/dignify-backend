@@ -29,7 +29,8 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
     List<Track> findGeneralTracksByGenreIdsExceptHypedTrackWithLimitAndOffset(@Param("userId") Long userId, @Param("limit") Integer limit, @Param("offset") Integer offset, @Param("seed") Integer seed);
 
     @Query(value = "SELECT t FROM Track t " +
-            "WHERE (LOWER(t.artistName) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) OR LOWER(t.trackName) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) ) AND t.isActive = TRUE " +
+            "WHERE (LOWER(t.artistName) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) OR LOWER(t.trackName) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) " +
+            "OR LOWER(t.artistNameKo) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) OR LOWER(t.trackNameKo) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) ) AND t.isActive = TRUE " +
             "ORDER BY t.id " +
             "LIMIT :limit " +
             "OFFSET :offset"
@@ -42,4 +43,6 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
     List<String> findUncheckedExternalIds(@Param("limit") Integer limit);
 
     List<Track> findByExternalIdIn(List<String> externalIds);
+
+    long countByKoCheckedFalse();
 }

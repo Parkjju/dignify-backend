@@ -23,6 +23,12 @@ public class KoEnrichmentBatchService {
         return trackRepository.findUncheckedExternalIds(limit);
     }
 
+    // 이번 실행에서 처리할 미체크 트랙 총량 (진행률 denominator).
+    @Transactional(readOnly = true)
+    public long countUnchecked() {
+        return trackRepository.countByKoCheckedFalse();
+    }
+
     // KR lookup 결과를 받아 매칭되는 row의 ko 컬럼을 채우고, 나머지도 checked 표시. 매칭 개수 반환.
     @Transactional
     public int applyKo(List<String> externalIds, List<ItunesItem> krItems) {

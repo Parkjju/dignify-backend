@@ -26,6 +26,8 @@ public class KoEnrichmentService {
         int totalChecked = 0;
         int totalMatched = 0;
         int batchCount = 0;
+        long total = koEnrichmentBatchService.countUnchecked();
+        log.info("Ko enrichment starting — {} tracks to process", total);
 
         while (true) {
             try {
@@ -42,7 +44,9 @@ public class KoEnrichmentService {
                 batchCount++;
                 totalChecked += externalIds.size();
                 totalMatched += matched;
-                log.info("Ko batch {} done — checked: {}, matched: {}", batchCount, externalIds.size(), matched);
+                long percent = total > 0 ? totalChecked * 100 / total : 100;
+                log.info("Ko batch {} done — checked: {}, matched: {} — progress: {}/{} ({}%)",
+                        batchCount, externalIds.size(), matched, totalChecked, total, percent);
 
                 Thread.sleep(30000);
             } catch (ResourceAccessException e) {
