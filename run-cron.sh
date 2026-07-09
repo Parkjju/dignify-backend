@@ -38,9 +38,17 @@ trap cleanup EXIT INT TERM
 
 # 절전 방지 (d=디스플레이 i=idle m=디스크 s=시스템 u=user-active)
 # 단, 배터리+뚜껑닫힘 케이스는 못 막음 — 오래 돌릴 땐 전원 꽂고 뚜껑 열어둘 것
-caffeinate -dimsu &
+# -w $$: 이 스크립트가 어떻게 죽든(SIGKILL 포함) caffeinate도 따라 종료 → 좀비 방지
+caffeinate -dimsu -w $$ &
 CAFFEINATE_PID=$!
-echo "[cron] Caffeinate started (PID $CAFFEINATE_PID)"
+echo "[cron] Caffeinate started (PID $CAFFEINATE_PID, tied to $$)"
+
+# 이전 실행이 비정상 종료돼 남은 프록시 선제 정리 (좀비/포트충돌 방지)
+if pgrep -f "cloud-sql-proxy.*--port=$PROXY_PORT" >/dev/null; then
+    echo "[cron] Killing stale proxy on port $PROXY_PORT..."
+    pkill -f "cloud-sql-proxy.*--port=$PROXY_PORT"
+    sleep 1
+fi
 
 # Cloud SQL Auth Proxy 시작
 echo "[cron] Starting Cloud SQL Auth Proxy on port $PROXY_PORT..."
