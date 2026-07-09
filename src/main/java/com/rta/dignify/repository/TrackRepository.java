@@ -29,7 +29,7 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
     List<Track> findGeneralTracksByGenreIdsExceptHypedTrackWithLimitAndOffset(@Param("userId") Long userId, @Param("limit") Integer limit, @Param("offset") Integer offset, @Param("seed") Integer seed);
 
     @Query(value = "SELECT t FROM Track t " +
-            "WHERE (t.artistName LIKE %:searchKeyword% OR t.trackName LIKE %:searchKeyword% ) AND t.isActive = TRUE " +
+            "WHERE (LOWER(t.artistName) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) OR LOWER(t.trackName) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) ) AND t.isActive = TRUE " +
             "ORDER BY t.id " +
             "LIMIT :limit " +
             "OFFSET :offset"

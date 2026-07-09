@@ -166,5 +166,8 @@ public class TrackRepositoryTest {
 
         List<Track> searchTracks2 = trackRepository.findTracksWithSearchKeyword("search", 10, 10);
         assertThat(searchTracks2).isEmpty();
+
+        List<Track> searchTracksUpper = trackRepository.findTracksWithSearchKeyword("SEARCH", 10, 0);
+        assertThat(searchTracksUpper).extracting(Track::getId).containsExactlyElementsOf(rockTracks.subList(10, 20).stream().map(Track::getId).toList());
     }
 }
