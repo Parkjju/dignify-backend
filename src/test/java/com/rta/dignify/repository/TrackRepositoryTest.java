@@ -170,6 +170,15 @@ public class TrackRepositoryTest {
 
         List<Track> searchTracksUpper = trackRepository.findTracksWithSearchKeyword("SEARCH", 10, 0);
         assertThat(searchTracksUpper).extracting(Track::getId).containsExactlyElementsOf(rockTracks.subList(10, 20).stream().map(Track::getId).toList());
+
+        // ko 컬럼도 검색 대상: 기본값은 로마자여도 한글 검색어로 매칭돼야 함
+        Track koTrack = Track.create("ko-search", "IU", "Album", "Love wins all",
+                "https://ex/p.mp3", "https://ex/v", "https://ex/a.jpg", releaseDate, rockGenre, "USA", "ITUNES");
+        koTrack.applyKoLocalization("아이유", "러브 윈즈 올", "앨범", "https://music.apple.com/kr/album/1");
+        entityManager.persistAndFlush(koTrack);
+
+        assertThat(trackRepository.findTracksWithSearchKeyword("아이유", 10, 0)).extracting(Track::getId).containsExactly(koTrack.getId());
+        assertThat(trackRepository.findTracksWithSearchKeyword("러브 윈즈", 10, 0)).extracting(Track::getId).containsExactly(koTrack.getId());
     }
 
     @Test
