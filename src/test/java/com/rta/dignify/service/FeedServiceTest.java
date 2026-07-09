@@ -183,6 +183,31 @@ public class FeedServiceTest {
     }
 
     @Test
+    @DisplayName("하입한 트랙은 메인 피드에서 제외되어야 한다")
+    void hypedTrackExcludedFromFeed() {
+        UserGenre userGenre = UserGenre.create(user, rockGenre);
+        entityManager.persistAndFlush(userGenre);
+
+        List<Long> hypedIds = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            UserHypeTrack hype = UserHypeTrack.create(user, rockTracks.get(i));
+            entityManager.persistAndFlush(hype);
+            hypedIds.add(rockTracks.get(i).getId());
+        }
+
+        List<Long> drained = new ArrayList<>();
+        String cursor = null;
+        FeedResponse resp;
+        do {
+            resp = feedService.getFeedList(user.getId(), cursor);
+            resp.items().forEach(item -> drained.add(item.trackId()));
+            cursor = resp.nextCursor();
+        } while (resp.hasMore());
+
+        assertThat(drained).doesNotContainAnyElementsOf(hypedIds);
+    }
+
+    @Test
     @DisplayName("피드 검색 기능 테스트")
     void feedServiceTest() {
         List<Track> testRockTracks = createTracks("search-rock", rockGenre, Instant.now());
