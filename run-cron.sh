@@ -98,4 +98,4 @@ echo "[cron] Press Ctrl+C when cron job completes."
 echo ""
 
 # 완료 로그 스트리밍
-tail -f "$LOG_FILE" | grep --line-buffered -E "Batch|finished|WARN|ERROR"
+tail -f "$LOG_FILE" | grep --line-buffered -iE "batch|finished|drained|WARN|ERROR"
