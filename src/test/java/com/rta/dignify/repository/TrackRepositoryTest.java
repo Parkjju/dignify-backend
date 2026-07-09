@@ -14,6 +14,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -169,5 +170,44 @@ public class TrackRepositoryTest {
 
         List<Track> searchTracksUpper = trackRepository.findTracksWithSearchKeyword("SEARCH", 10, 0);
         assertThat(searchTracksUpper).extracting(Track::getId).containsExactlyElementsOf(rockTracks.subList(10, 20).stream().map(Track::getId).toList());
+    }
+
+    @Test
+    @DisplayName("ko enrichment: 미체크 조회 → 매칭 apply / 미매칭 mark, 표시 폴백")
+    void koEnrichmentTest() {
+        Genre genre = Genre.create("Pop", "팝");
+        entityManager.persistAndFlush(genre);
+
+        Instant releaseDate = Instant.now();
+        Track matched = Track.create("ext-1", "IU", "Album", "Love wins all",
+                "https://ex/p1.mp3", "https://music.apple.com/us/album/1", "https://ex/a1.jpg", releaseDate, genre, "USA", "ITUNES");
+        Track unmatched = Track.create("ext-2", "SomeUsArtist", "Album2", "Track2",
+                "https://ex/p2.mp3", "https://music.apple.com/us/album/2", "https://ex/a2.jpg", releaseDate, genre, "USA", "ITUNES");
+        entityManager.persistAndFlush(matched);
+        entityManager.persistAndFlush(unmatched);
+
+        // ko_checked 기본 false → 둘 다 미체크 큐에 잡힘
+        assertThat(trackRepository.findUncheckedExternalIds(190)).containsExactlyInAnyOrder("ext-1", "ext-2");
+
+        matched.applyKoLocalization("아이유", "Love wins all", "앨범", "https://music.apple.com/kr/album/1");
+        unmatched.markKoChecked();
+        entityManager.flush();
+        entityManager.clear();
+
+        // 큐 소진
+        assertThat(trackRepository.findUncheckedExternalIds(190)).isEmpty();
+
+        // 표시 폴백: ko 로케일이면 ko값, ko값 없으면 기존값
+        Track reloadedMatched = trackRepository.findByExternalIdIn(List.of("ext-1")).get(0);
+        assertThat(reloadedMatched.displayArtistName(Locale.KOREAN)).isEqualTo("아이유");
+        assertThat(reloadedMatched.displayTrackViewUrl(Locale.KOREAN)).isEqualTo("https://music.apple.com/kr/album/1");
+        assertThat(reloadedMatched.displayArtistName(Locale.ENGLISH)).isEqualTo("IU");
+        // trackName은 KR값이 기존과 동일 → null 유지, 표시는 폴백
+        assertThat(reloadedMatched.getTrackNameKo()).isNull();
+        assertThat(reloadedMatched.displayTrackName(Locale.KOREAN)).isEqualTo("Love wins all");
+
+        Track reloadedUnmatched = trackRepository.findByExternalIdIn(List.of("ext-2")).get(0);
+        assertThat(reloadedUnmatched.displayArtistName(Locale.KOREAN)).isEqualTo("SomeUsArtist");
+        assertThat(reloadedUnmatched.displayTrackViewUrl(Locale.KOREAN)).isEqualTo("https://music.apple.com/us/album/2");
     }
 }

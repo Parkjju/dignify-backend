@@ -1,12 +1,23 @@
 #!/bin/bash
 set -e
 
-if [ -z "$1" ]; then
-    echo "Usage: ./run-cron.sh <endIndex>"
-    echo "Example: ./run-cron.sh 50000000"
-    exit 1
-fi
-END_INDEX="$1"
+JOB="${1:-collect}"
+END_INDEX="$2"
+
+case "$JOB" in
+    collect)
+        if [ -z "$END_INDEX" ]; then
+            echo "Usage: ./run-cron.sh collect <endIndex>"
+            echo "Example: ./run-cron.sh collect 50000000"
+            exit 1
+        fi
+        ;;
+    enrich-ko) ;;
+    *)
+        echo "Unknown job: $JOB (collect | enrich-ko)"
+        exit 1
+        ;;
+esac
 
 set -a && source .env && set +a
 
@@ -68,9 +79,14 @@ for i in $(seq 1 60); do
 done
 
 # 크론잡 트리거
-echo "[cron] Triggering cron job..."
+if [ "$JOB" = "collect" ]; then
+    CRON_URL="http://localhost:$APP_PORT/internal/cron/collect?endIndex=$END_INDEX"
+else
+    CRON_URL="http://localhost:$APP_PORT/internal/cron/enrich-ko"
+fi
+echo "[cron] Triggering cron job '$JOB'..."
 RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-    -X POST "http://localhost:$APP_PORT/internal/cron/collect?endIndex=$END_INDEX" \
+    -X POST "$CRON_URL" \
     -H "X-Cron-Secret: $CRON_SECRET")
 
 if [ "$RESPONSE" != "202" ]; then

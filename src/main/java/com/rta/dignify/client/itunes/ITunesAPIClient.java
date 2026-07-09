@@ -51,4 +51,22 @@ public class ITunesAPIClient {
                 .filter(item -> item.previewUrl() != null)
                 .toList();
     }
+
+    // KR 스토어프론트로 트랙 id들을 조회해 한글 로컬라이즈 값을 받아온다. (enrichment 크론용)
+    public List<ItunesItem> lookupKrByTrackIds(List<String> trackIds) {
+        String ids = String.join(",", trackIds);
+
+        ItunesLookupResponse response = restClient.get()
+                .uri("/lookup?id={ids}&entity=song&country=KR&lang=ko_kr", ids)
+                .retrieve()
+                .body(ItunesLookupResponse.class);
+
+        if (response == null || response.results() == null) {
+            return List.of();
+        }
+
+        return response.results().stream()
+                .filter(item -> "track".equals(item.wrapperType()))
+                .toList();
+    }
 }

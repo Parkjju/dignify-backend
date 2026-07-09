@@ -9,6 +9,7 @@ import org.hibernate.annotations.OnDeleteAction;
 
 import com.rta.dignify.dto.itunes.ItunesItem;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Optional;
 
 @Table(name = "tracks",
@@ -57,6 +58,23 @@ public class Track extends BaseTimeEntity {
     @Column(length = 10)
     private String country;
 
+    // KR 스토어프론트 로컬라이즈 값. enrichment 크론이 채우며, 없으면 기존 컬럼으로 폴백.
+    @Column(name = "artist_name_ko", columnDefinition = "TEXT")
+    private String artistNameKo;
+
+    @Column(name = "track_name_ko", columnDefinition = "TEXT")
+    private String trackNameKo;
+
+    @Column(name = "collection_name_ko", columnDefinition = "TEXT")
+    private String collectionNameKo;
+
+    @Column(name = "track_view_url_ko", columnDefinition = "TEXT")
+    private String trackViewUrlKo;
+
+    // enrichment 크론이 이 row의 KR lookup을 시도했는지. 매칭 실패해도 true로 찍어 재조회 방지.
+    @Column(name = "ko_checked", nullable = false, columnDefinition = "boolean default false")
+    private Boolean koChecked = false;
+
     @Column(length = 10, nullable = false)
     private String source = "ITUNES";
 
@@ -79,6 +97,45 @@ public class Track extends BaseTimeEntity {
 
     public static Track create(String externalId, String artistName, String collectionName, String trackName, String previewUrl, String trackViewUrl, String artworkUrl, Instant releaseDate, Genre genre, String country, String source) {
         return new Track(externalId, artistName, collectionName, trackName, previewUrl, trackViewUrl, artworkUrl, releaseDate, genre, country, source);
+    }
+
+    private static boolean isKo(Locale locale) {
+        return "ko".equals(locale.getLanguage());
+    }
+
+    public String displayArtistName(Locale locale) {
+        return isKo(locale) && artistNameKo != null ? artistNameKo : artistName;
+    }
+
+    public String displayTrackName(Locale locale) {
+        return isKo(locale) && trackNameKo != null ? trackNameKo : trackName;
+    }
+
+    public String displayCollectionName(Locale locale) {
+        return isKo(locale) && collectionNameKo != null ? collectionNameKo : collectionName;
+    }
+
+    public String displayTrackViewUrl(Locale locale) {
+        return isKo(locale) && trackViewUrlKo != null ? trackViewUrlKo : trackViewUrl;
+    }
+
+    // KR lookup 매칭 성공: 기존 값과 다른 필드만 채우고(같으면 null 유지) checked 표시.
+    // 서구권 곡은 KR도 영어라 대부분 null로 남음 → 중복 저장 방지, null = "실제 한글값 있음"의 의미 유지.
+    public void applyKoLocalization(String artistNameKo, String trackNameKo, String collectionNameKo, String trackViewUrlKo) {
+        this.artistNameKo = differsOrNull(this.artistName, artistNameKo);
+        this.trackNameKo = differsOrNull(this.trackName, trackNameKo);
+        this.collectionNameKo = differsOrNull(this.collectionName, collectionNameKo);
+        this.trackViewUrlKo = differsOrNull(this.trackViewUrl, trackViewUrlKo);
+        this.koChecked = true;
+    }
+
+    private static String differsOrNull(String base, String ko) {
+        return ko != null && !ko.equals(base) ? ko : null;
+    }
+
+    // KR lookup 매칭 실패: 재조회만 막음.
+    public void markKoChecked() {
+        this.koChecked = true;
     }
 
     public static Optional<Track> from(ItunesItem item, Genre genre) {

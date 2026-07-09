@@ -37,4 +37,9 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
     List<Track> findTracksWithSearchKeyword(@Param("searchKeyword") String searchKeyword, @Param("limit") Integer limit, @Param("offset") Integer offset);
 
     boolean existsByExternalIdAndSource(String externalId, String source);
+
+    @Query("SELECT t.externalId FROM Track t WHERE t.koChecked = FALSE ORDER BY t.id LIMIT :limit")
+    List<String> findUncheckedExternalIds(@Param("limit") Integer limit);
+
+    List<Track> findByExternalIdIn(List<String> externalIds);
 }

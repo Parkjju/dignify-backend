@@ -28,11 +28,11 @@ public record TrackDetailResponse(Long trackId, String trackName, String artistN
 
         return new TrackDetailResponse(
                 track.getId(),
-                track.getTrackName(),
-                track.getArtistName(),
-                track.getCollectionName(),
+                track.displayTrackName(currentLocale),
+                track.displayArtistName(currentLocale),
+                track.displayCollectionName(currentLocale),
                 track.getArtworkUrl(),
-                track.getTrackViewUrl(),
+                track.displayTrackViewUrl(currentLocale),
                 track.getReleaseDate(),
                 genreName,
                 trackHypeUserItems
