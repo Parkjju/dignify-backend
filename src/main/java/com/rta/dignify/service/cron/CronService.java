@@ -55,16 +55,13 @@ public class CronService {
     }
 
     // 아티스트명 기반 수동 collect. 단발 검색이라 @Async/루프/cronState 없이 동기 처리.
-    // 저장한 트랙은 curation_tracks에도 등록 → 아티스트 collect는 곧 큐레이션.
     public int collectByArtist(String artistName) {
         log.info("collect-artist '{}' searching iTunes...", artistName);
         List<ItunesItem> items = iTunesAPIClient.searchByArtist(artistName);
         log.info("collect-artist '{}' found {} tracks with preview — saving...", artistName, items.size());
         int saved = cronBatchService.saveItems(items);
-        List<String> externalIds = items.stream().map(item -> String.valueOf(item.trackId())).toList();
-        int curated = cronBatchService.curateByExternalIds(externalIds);
-        log.info("collect-artist '{}' finished — found: {}, saved: {}, curated: {}, skipped(dup/no-genre): {}",
-                artistName, items.size(), saved, curated, items.size() - saved);
+        log.info("collect-artist '{}' finished — found: {}, saved: {}, skipped(dup/no-genre): {}",
+                artistName, items.size(), saved, items.size() - saved);
         return saved;
     }
 }
