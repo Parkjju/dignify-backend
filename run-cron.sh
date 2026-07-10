@@ -1,6 +1,26 @@
 #!/bin/bash
 set -e
 
+usage() {
+    cat <<'EOF'
+run-cron.sh — Cloud SQL 프록시 + bootRun 띄우고 크론잡 트리거
+
+Usage:
+  ./run-cron.sh collect <endIndex>              id 브루트포스로 트랙 수집
+  ./run-cron.sh collect-artist "A" "B" ...      아티스트명으로 검색-수집 (여러 명 가능)
+  ./run-cron.sh enrich-ko                       한글 로컬라이즈 보강
+  ./run-cron.sh -h | --help                     이 도움말
+
+Examples:
+  ./run-cron.sh collect 50000000
+  ./run-cron.sh collect-artist "Radiohead" "Aphex Twin"
+EOF
+}
+
+case "$1" in
+    -h|--help) usage; exit 0 ;;
+esac
+
 JOB="${1:-collect}"
 END_INDEX="$2"
 
@@ -13,8 +33,16 @@ case "$JOB" in
         fi
         ;;
     enrich-ko) ;;
+    collect-artist)
+        shift
+        ARTISTS=("$@")
+        if [ ${#ARTISTS[@]} -eq 0 ]; then
+            echo "Usage: ./run-cron.sh collect-artist \"Radiohead\" \"Aphex Twin\" ..."
+            exit 1
+        fi
+        ;;
     *)
-        echo "Unknown job: $JOB (collect | enrich-ko)"
+        echo "Unknown job: $JOB (collect | collect-artist | enrich-ko)"
         exit 1
         ;;
 esac
@@ -31,6 +59,7 @@ cleanup() {
     [ -n "$BOOT_PID" ] && kill "$BOOT_PID" 2>/dev/null
     [ -n "$PROXY_PID" ] && kill "$PROXY_PID" 2>/dev/null
     [ -n "$CAFFEINATE_PID" ] && kill "$CAFFEINATE_PID" 2>/dev/null
+    [ -f "$LOG_FILE" ] && cp "$LOG_FILE" "${LOG_FILE%.log}.last.log"  # 마지막 실행 로그 보존 (디버깅용)
     rm -f "$LOG_FILE"
     echo "[cron] Done."
 }
@@ -87,6 +116,32 @@ for i in $(seq 1 60); do
 done
 
 # 크론잡 트리거
+if [ "$JOB" = "collect-artist" ]; then
+    # 앱 쪽 진행 로그(searching/found/skipped)를 콘솔로 흘려줌. 루프 끝나면 정리.
+    tail -n 0 -f "$LOG_FILE" | grep --line-buffered -E "collect-artist|Skipping track|WARN|ERROR|Exception|Caused by|^[[:space:]]+at " &
+    TAIL_PID=$!
+    # 아티스트 목록을 순회하며 동기 검색-적재. 각 호출은 저장 개수(200 OK 본문)를 반환.
+    for artist in "${ARTISTS[@]}"; do
+        echo "[cron] Collecting artist: $artist"
+        BODY=$(curl -s -w "\n%{http_code}" -X POST \
+            "http://localhost:$APP_PORT/internal/cron/collect-artist" \
+            --data-urlencode "name=$artist" \
+            -H "X-Cron-Secret: $CRON_SECRET")
+        CODE=$(echo "$BODY" | tail -1)
+        SAVED=$(echo "$BODY" | sed '$d')
+        if [ "$CODE" != "200" ]; then
+            echo "[cron] ERROR ($CODE) for '$artist': $SAVED"
+        else
+            echo "[cron] '$artist' → saved $SAVED tracks"
+        fi
+        sleep 1
+    done
+    sleep 1  # 마지막 앱 로그가 콘솔로 흘러나올 시간
+    kill "$TAIL_PID" 2>/dev/null
+    echo "[cron] collect-artist finished."
+    exit 0
+fi
+
 if [ "$JOB" = "collect" ]; then
     CRON_URL="http://localhost:$APP_PORT/internal/cron/collect?endIndex=$END_INDEX"
 else

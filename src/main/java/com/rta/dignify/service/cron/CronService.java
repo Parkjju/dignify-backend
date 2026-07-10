@@ -53,4 +53,15 @@ public class CronService {
 
         log.info("Cron job '{}' finished — total processed: {}", jobName, totalProcessed);
     }
+
+    // 아티스트명 기반 수동 collect. 단발 검색이라 @Async/루프/cronState 없이 동기 처리.
+    public int collectByArtist(String artistName) {
+        log.info("collect-artist '{}' searching iTunes...", artistName);
+        List<ItunesItem> items = iTunesAPIClient.searchByArtist(artistName);
+        log.info("collect-artist '{}' found {} tracks with preview — saving...", artistName, items.size());
+        int saved = cronBatchService.saveItems(items);
+        log.info("collect-artist '{}' finished — found: {}, saved: {}, skipped(dup/no-genre): {}",
+                artistName, items.size(), saved, items.size() - saved);
+        return saved;
+    }
 }

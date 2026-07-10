@@ -42,27 +42,34 @@ public class CronBatchService {
                 ? cronState.getLastProcessedId() + 1
                 : 1L;
 
-        List<Track> tracks = List.of();
-        if (!itunesItemList.isEmpty()) {
-            Set<Long> seenTrackIds = new HashSet<>();
-            tracks = itunesItemList.stream()
-                    .filter(itunesItem -> seenTrackIds.add(itunesItem.trackId()))
-                    .filter(itunesItem -> !trackRepository.existsByExternalIdAndSource(String.valueOf(itunesItem.trackId()), "ITUNES"))
-                    .flatMap(item -> genreRepository.findByGenreNameEn(item.primaryGenreName())
-                            .flatMap(genre -> Track.from(item, genre))
-                            .stream())
-                    .toList();
-
-            tracks.forEach(track -> {
-                try {
-                    trackSaveService.saveTrack(track);
-                } catch (DataIntegrityViolationException e) {
-                    log.warn("Skipping track {}: {}", track.getExternalId(), e.getMessage());
-                }
-            });
-        }
+        int saved = saveItems(itunesItemList);
         cronState.updateLastProcessedId(lastProcessedId + 199);
-        return new ProcessResult(tracks.size(), lastProcessedId + 199);
+        return new ProcessResult(saved, lastProcessedId + 199);
+    }
+
+    // iTunes 결과를 DB에 적재. 중복 제거 + 장르 매핑 + 저장. 저장된 트랙 수 반환. (collect / collect-artist 공용)
+    @Transactional
+    public int saveItems(List<ItunesItem> itunesItemList) {
+        if (itunesItemList.isEmpty()) {
+            return 0;
+        }
+        Set<Long> seenTrackIds = new HashSet<>();
+        List<Track> tracks = itunesItemList.stream()
+                .filter(itunesItem -> seenTrackIds.add(itunesItem.trackId()))
+                .filter(itunesItem -> !trackRepository.existsByExternalIdAndSource(String.valueOf(itunesItem.trackId()), "ITUNES"))
+                .flatMap(item -> genreRepository.findByGenreNameEn(item.primaryGenreName())
+                        .flatMap(genre -> Track.from(item, genre))
+                        .stream())
+                .toList();
+
+        tracks.forEach(track -> {
+            try {
+                trackSaveService.saveTrack(track);
+            } catch (DataIntegrityViolationException e) {
+                log.warn("Skipping track {}: {}", track.getExternalId(), e.getMessage());
+            }
+        });
+        return tracks.size();
     }
 
     public record ProcessResult(int processedSize, long lastProcessedId) {}

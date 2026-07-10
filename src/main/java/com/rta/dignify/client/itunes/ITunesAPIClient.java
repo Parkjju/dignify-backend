@@ -52,6 +52,23 @@ public class ITunesAPIClient {
                 .toList();
     }
 
+    // 아티스트명으로 트랙을 검색해 적재한다. (수동 collect용 — id 브루트포스 대신 이름 기반)
+    public List<ItunesItem> searchByArtist(String artistName) {
+        ItunesLookupResponse response = restClient.get()
+                .uri("/search?term={term}&entity=song&country=US&limit=200", artistName)
+                .retrieve()
+                .body(ItunesLookupResponse.class);
+
+        if (response == null || response.results() == null) {
+            return List.of();
+        }
+
+        return response.results().stream()
+                .filter(item -> "track".equals(item.wrapperType()))
+                .filter(item -> item.previewUrl() != null)
+                .toList();
+    }
+
     // KR 스토어프론트로 트랙 id들을 조회해 한글 로컬라이즈 값을 받아온다. (enrichment 크론용)
     public List<ItunesItem> lookupKrByTrackIds(List<String> trackIds) {
         String ids = String.join(",", trackIds);
