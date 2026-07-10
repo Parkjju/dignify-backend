@@ -43,17 +43,17 @@ public class FeedService {
         if (result.size() == FeedService.FETCH_LIMIT) {
             newCursor = new FeedCursor(currentCursor.phase(), currentCursor.genreOffset() + FeedService.FETCH_LIMIT, currentCursor.generalOffset(), currentCursor.seed());
             List<FeedItem> feedItems = result.stream().map((track) -> FeedItem.from(track, false)).toList();
-            response = new FeedResponse(feedItems, newCursor.encode(), true);
+            response = new FeedResponse(feedItems, newCursor.encode(), true, false);
         } else {
-            // 장르 조회에서 부족한 결과를 general 조회로 채우기
+            // 장르 조회에서 부족한 결과를 general 조회로 채우기 → 이 페이지는 장르 풀 소진.
             List<Track> paddingResponse = trackRepository.findGeneralTracksByGenreIdsExceptHypedTrackWithLimitAndOffset(userId, FETCH_LIMIT - result.size(), currentCursor.generalOffset(), currentCursor.seed());
             result.addAll(paddingResponse);
             List<FeedItem> feedItems = result.stream().map((track) -> FeedItem.from(track, false)).toList();
             newCursor = new FeedCursor(FeedCursor.Phase.GENERAL, currentCursor.genreOffset() + (FETCH_LIMIT - paddingResponse.size()), currentCursor.generalOffset() + paddingResponse.size(), currentCursor.seed());
             if (result.size() < FeedService.FETCH_LIMIT)  {
-                response = new FeedResponse(feedItems, null, false);
+                response = new FeedResponse(feedItems, null, false, true);
             } else {
-                response = new FeedResponse(feedItems, newCursor.encode(), true);
+                response = new FeedResponse(feedItems, newCursor.encode(), true, true);
             }
         }
         return response;
@@ -79,9 +79,9 @@ public class FeedService {
 
         if (result.size() == FeedService.FETCH_LIMIT) {
             newCursor = new FeedCursor(currentCursor.phase(), currentCursor.genreOffset() + FeedService.FETCH_LIMIT, 0, currentCursor.seed());
-            response = new FeedResponse(feedItems, newCursor.encode(), true);
+            response = new FeedResponse(feedItems, newCursor.encode(), true, false);
         } else {
-            response = new FeedResponse(feedItems, null, false);
+            response = new FeedResponse(feedItems, null, false, false);
         }
 
         return response;
