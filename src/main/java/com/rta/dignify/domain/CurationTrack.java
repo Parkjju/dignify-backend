@@ -27,4 +27,11 @@ public class CurationTrack extends BaseTimeEntity {
 
     @Column(name = "is_active", nullable = false, columnDefinition = "boolean default true")
     private Boolean isActive = true;
+
+    // priority 0 = 해당 장르 피드에 부스트 없이 노출 (curation-priority-zero-boost 결정). 필요 시 나중에 승급.
+    public static CurationTrack create(Track track) {
+        CurationTrack curationTrack = new CurationTrack();
+        curationTrack.track = track;
+        return curationTrack;
+    }
 }

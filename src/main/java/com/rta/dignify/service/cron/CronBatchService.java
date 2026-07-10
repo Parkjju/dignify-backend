@@ -1,11 +1,13 @@
 package com.rta.dignify.service.cron;
 
 import com.rta.dignify.domain.CronState;
+import com.rta.dignify.domain.CurationTrack;
 import com.rta.dignify.domain.Track;
 import com.rta.dignify.dto.itunes.ItunesItem;
 import com.rta.dignify.global.exception.BusinessException;
 import com.rta.dignify.global.exception.ErrorCode;
 import com.rta.dignify.repository.CronStateRepository;
+import com.rta.dignify.repository.CurationTrackRepository;
 import com.rta.dignify.repository.GenreRepository;
 import com.rta.dignify.repository.TrackRepository;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +27,7 @@ public class CronBatchService {
     private final GenreRepository genreRepository;
     private final TrackRepository trackRepository;
     private final CronStateRepository cronStateRepository;
+    private final CurationTrackRepository curationTrackRepository;
     private final TrackSaveService trackSaveService;
 
     // iTunes lookup 범위의 시작 id. HTTP 호출은 트랜잭션 밖(CronService)에서 하도록 id만 먼저 내줌.
@@ -70,6 +73,24 @@ public class CronBatchService {
             }
         });
         return tracks.size();
+    }
+
+    // 해당 externalId들의 트랙을 curation_tracks에 등록(멱등). collect-artist 전용.
+    // saveItems 후 호출 — 이미 저장된 트랙만 조회되므로 정크/장르미매핑 트랙은 자동 제외.
+    @Transactional
+    public int curateByExternalIds(List<String> externalIds) {
+        if (externalIds.isEmpty()) {
+            return 0;
+        }
+        List<Track> tracks = trackRepository.findByExternalIdIn(externalIds);
+        int curated = 0;
+        for (Track track : tracks) {
+            if (!curationTrackRepository.existsByTrack_Id(track.getId())) {
+                curationTrackRepository.save(CurationTrack.create(track));
+                curated++;
+            }
+        }
+        return curated;
     }
 
     public record ProcessResult(int processedSize, long lastProcessedId) {}
