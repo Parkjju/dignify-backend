@@ -11,6 +11,7 @@ import com.rta.dignify.dto.itunes.ItunesItem;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 @Table(name = "tracks",
         uniqueConstraints = @UniqueConstraint(name = "uq_external_source", columnNames = {"external_id", "source"}),
@@ -138,9 +139,28 @@ public class Track extends BaseTimeEntity {
         this.koChecked = true;
     }
 
+    // 정크 메타(카라오케/트리뷰트/사운드알라이크/힐링·피트니스 컴필) 수집 차단. 아래 SQL UPDATE와 동일 기준 유지.
+    // ponytail: Cover/Instrumental/Backing Track은 정당한 곡 많아 의도적으로 제외(보류).
+    private static final Pattern JUNK = Pattern.compile(
+            "karaoke|tribute|originally performed|made famous by|in the style of"
+                    + "|sound effects|white noise|rain sounds|nature sounds|sleep sounds"
+                    + "|lullaby version|music box|8[- ]?bit|rockabye baby"
+                    + "|meditation|yoga|asmr|hypnosis"
+                    + "|workout|running music|spinning|bpm",
+            Pattern.CASE_INSENSITIVE);
+
+    private static boolean isJunk(ItunesItem item) {
+        return JUNK.matcher(item.artistName()).find()
+                || JUNK.matcher(item.collectionName()).find()
+                || JUNK.matcher(item.trackName()).find();
+    }
+
     public static Optional<Track> from(ItunesItem item, Genre genre) {
         if (item.artistName() == null || item.collectionName() == null || item.trackName() == null
                 || item.trackViewUrl() == null || item.artworkUrl100() == null || item.releaseDate() == null) {
+            return Optional.empty();
+        }
+        if (isJunk(item)) {
             return Optional.empty();
         }
         return Optional.of(new Track(
