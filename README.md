@@ -133,13 +133,13 @@ Wrote tests at multiple layers with a clear separation of concerns between unit,
 | GET | `/feed` | Paginated track feed with opaque cursor |
 | GET | `/feed/search` | Keyword search across track/artist name |
 | GET | `/tracks/{trackId}` | Track detail + first 5 users who hyped it |
-| POST | `/tracks/{trackId}/hypes` | Hype a track |
-| DELETE | `/tracks/{trackId}/hypes` | Remove hype |
+| POST | `/tracks/{trackId}/hype` | Hype a track |
+| DELETE | `/tracks/{trackId}/hype` | Remove hype |
+| POST | `/tracks/{trackId}/listen` | Record a listen event (fire-and-forget, append-only) |
 | GET | `/users/me` | User profile |
 | PATCH | `/users/me/nickname` | Update nickname |
 | PUT | `/users/me/genres` | Replace preferred genres (0–3) |
 | POST | `/users/me/onboarding/complete` | Mark onboarding as done |
-| POST | `/users/me/listens` | Record a listen event (fire-and-forget) |
 | GET | `/users/me/hypes` | Paginated hype history (keyset pagination) |
 
 ---
