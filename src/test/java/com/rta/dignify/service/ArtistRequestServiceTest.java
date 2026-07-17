@@ -3,6 +3,8 @@ package com.rta.dignify.service;
 import com.rta.dignify.domain.RequestStatus;
 import com.rta.dignify.domain.User;
 import com.rta.dignify.dto.artistrequest.ArtistRequestResponse;
+import com.rta.dignify.global.exception.BusinessException;
+import com.rta.dignify.global.exception.ErrorCode;
 import com.rta.dignify.repository.ArtistRequestRepository;
 import com.rta.dignify.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 
 @SpringBootTest
 @Transactional
@@ -75,6 +78,38 @@ public class ArtistRequestServiceTest {
 
         assertThat(history).extracting(ArtistRequestResponse::artistName)
                 .containsExactly("mine");
+    }
+
+    @Test
+    @DisplayName("본인 요청 삭제 — 목록에서 사라진다")
+    void deleteOwnRequest() {
+        Long id = artistRequestService.create(user.getId(), "toDelete").id();
+
+        artistRequestService.delete(user.getId(), id);
+
+        assertThat(artistRequestRepository.findById(id)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("남의 요청 삭제 시도 — ARTIST_REQUEST_NOT_FOUND, 원본은 유지된다")
+    void deleteOthersRequestIsRejected() {
+        User other = userRepository.save(User.create("other@gmail.com", "other"));
+        Long id = artistRequestService.create(other.getId(), "theirs").id();
+
+        assertThatThrownBy(() -> artistRequestService.delete(user.getId(), id))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ARTIST_REQUEST_NOT_FOUND);
+        assertThat(artistRequestRepository.findById(id)).isPresent();   // 남의 것은 안 지워짐
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 요청 삭제 — ARTIST_REQUEST_NOT_FOUND")
+    void deleteMissingRequest() {
+        assertThatThrownBy(() -> artistRequestService.delete(user.getId(), 9999L))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ARTIST_REQUEST_NOT_FOUND);
     }
 
     @BeforeEach

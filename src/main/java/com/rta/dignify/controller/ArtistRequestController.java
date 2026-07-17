@@ -27,4 +27,10 @@ public class ArtistRequestController {
     public ArtistRequestListResponse history(@AuthenticationPrincipal Long userId) {
         return new ArtistRequestListResponse(service.history(userId));
     }
+
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @DeleteMapping("/{id}")
+    public void delete(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
+        service.delete(userId, id);
+    }
 }

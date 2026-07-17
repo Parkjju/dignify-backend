@@ -3,6 +3,8 @@ package com.rta.dignify.service;
 import com.rta.dignify.domain.ArtistRequest;
 import com.rta.dignify.domain.User;
 import com.rta.dignify.dto.artistrequest.ArtistRequestResponse;
+import com.rta.dignify.global.exception.BusinessException;
+import com.rta.dignify.global.exception.ErrorCode;
 import com.rta.dignify.repository.ArtistRequestRepository;
 import com.rta.dignify.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,5 +29,15 @@ public class ArtistRequestService {
     public List<ArtistRequestResponse> history(Long userId) {
         return repository.findByUserIdOrderByIdDesc(userId).stream()
                 .map(ArtistRequestResponse::from).toList();
+    }
+
+    @Transactional
+    public void delete(Long userId, Long id) {
+        ArtistRequest req = repository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ARTIST_REQUEST_NOT_FOUND));
+        if (!req.getUser().getId().equals(userId)) {
+            throw new BusinessException(ErrorCode.ARTIST_REQUEST_NOT_FOUND);   // 남의 것 = 없는 것처럼(존재 노출 방지)
+        }
+        repository.delete(req);
     }
 }
