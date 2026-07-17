@@ -1,10 +1,12 @@
 package com.rta.dignify.controller;
 
+import com.rta.dignify.dto.DeviceTokenRegister;
 import com.rta.dignify.dto.hype.HypeListResponse;
 import com.rta.dignify.dto.user.NicknameUpdateRequest;
 import com.rta.dignify.dto.user.NicknameUpdateResponse;
 import com.rta.dignify.dto.user.PreferGenreUpdateRequest;
 import com.rta.dignify.dto.user.UserProfileResponse;
+import com.rta.dignify.service.DeviceTokenService;
 import com.rta.dignify.service.HypeService;
 import com.rta.dignify.service.UserService;
 import jakarta.validation.Valid;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 public class UserController {
     private final HypeService hypeService;
     private final UserService userService;
+    private final DeviceTokenService deviceTokenService;
 
     @GetMapping("/me/hypes")
     public HypeListResponse getMyHypedTracks(@AuthenticationPrincipal Long userId, @RequestParam(required = false) Long cursor) {
@@ -44,5 +47,11 @@ public class UserController {
     @PutMapping("/me/genres")
     public void changeUserGenres(@AuthenticationPrincipal Long userId, @RequestBody @Valid PreferGenreUpdateRequest request) {
         userService.changeUserGenres(userId, request);
+    }
+
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PostMapping("/me/device-token")
+    public void registerDeviceToken(@AuthenticationPrincipal Long userId, @RequestBody @Valid DeviceTokenRegister request) {
+        deviceTokenService.register(userId, request.token(), request.environment());
     }
 }

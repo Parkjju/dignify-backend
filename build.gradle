@@ -31,6 +31,9 @@ dependencies {
 	// Apple identityToken 검증 (JWKS)
 	implementation 'com.nimbusds:nimbus-jose-jwt:9.40'
 
+	// Apple push notification
+	implementation 'com.eatthepath:pushy:0.15.6'
+
 	// Cloud SQL (Cloud Run → Cloud SQL Unix socket 연결)
 	implementation 'com.google.cloud.sql:postgres-socket-factory:1.14.0'
 
