@@ -218,27 +218,28 @@ public class FeedServiceTest {
         UserHypeTrack userHypeBalladTrack = UserHypeTrack.create(user, testBalladTracks.get(1));
         entityManager.persistAndFlush(userHypeBalladTrack);
 
-        testRockTracks.addAll(testBalladTracks);
+        testRockTracks.addAll(testBalladTracks);   // 이제 30개(rock+ballad) 전체
 
-        // 1. 커서 문자열 null 조회
-        FeedResponse fetch1 = feedService.searchFeedList(user.getId(), null, "search");
-        assertThat(fetch1.items().get(1).isHyped()).isTrue();
-        assertThat(fetch1.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(testRockTracks.subList(0, 10).stream().map(Track::getId).toList());
+        // "search"는 30개를 전부 매칭시키는 합성 쿼리라 여기선 순서가 아니라
+        // 완전성/하입 플래그/커서 종료를 검증한다. 관련도 정렬 자체는 TrackRepositoryTest 담당.
+        List<Long> drained = new ArrayList<>();
+        List<Long> hypedInResult = new ArrayList<>();
+        String cursor = null;
+        FeedResponse resp;
+        do {
+            resp = feedService.searchFeedList(user.getId(), cursor, "search");
+            resp.items().forEach(item -> {
+                drained.add(item.trackId());
+                if (item.isHyped()) hypedInResult.add(item.trackId());
+            });
+            cursor = resp.nextCursor();
+        } while (resp.hasMore());
 
-        // 2. 1차 순회
-        FeedResponse fetch2 = feedService.searchFeedList(user.getId(), fetch1.nextCursor(), "search");
-        assertThat(fetch2.items().get(6).isHyped()).isTrue();
-        assertThat(fetch2.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(Stream.concat(testRockTracks.subList(10, 15).stream(), testBalladTracks.subList(0, 5).stream()).map(Track::getId).toList());
-
-        // 3. 2차 순회
-        FeedResponse fetch3 = feedService.searchFeedList(user.getId(), fetch2.nextCursor(), "search");
-        assertThat(fetch3.items()).extracting(FeedItem::isHyped).doesNotContain(true);
-        assertThat(fetch3.items()).extracting(FeedItem::trackId).containsExactlyElementsOf(testBalladTracks.subList(5, 15).stream().map(Track::getId).toList());
-        assertThat(fetch3.hasMore()).isTrue();
-
-        // 최종 순회
-        FeedResponse fetch4 = feedService.searchFeedList(user.getId(), fetch3.nextCursor(), "search");
-        assertThat(fetch4.items()).isEmpty();
-        assertThat(fetch4.hasMore()).isFalse();
+        // 하입한 트랙도 검색엔 나오고 isHyped=true (메인 피드와 달리 제외 안 함)
+        assertThat(hypedInResult).containsExactlyInAnyOrder(
+                testRockTracks.get(1).getId(), testBalladTracks.get(1).getId());
+        // 매칭 30개가 중복·누락 없이 정확히 한 번씩 소진돼야 한다
+        assertThat(drained).containsExactlyInAnyOrderElementsOf(
+                testRockTracks.stream().map(Track::getId).toList());
     }
 }
