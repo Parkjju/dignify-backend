@@ -40,4 +40,9 @@ public class ArtistRequest extends BaseTimeEntity {
     public static ArtistRequest create(User user, String artistName) {
         return new ArtistRequest(user, artistName);
     }
+
+    public void resolve(RequestStatus status, String cancelReason) {
+        this.status = status;
+        this.cancelReason = cancelReason;
+    }
 }

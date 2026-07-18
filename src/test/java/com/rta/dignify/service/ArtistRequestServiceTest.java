@@ -112,6 +112,38 @@ public class ArtistRequestServiceTest {
                 .isEqualTo(ErrorCode.ARTIST_REQUEST_NOT_FOUND);
     }
 
+    @Test
+    @DisplayName("resolve — ADDED로 상태가 바뀐다")
+    void resolveToAdded() {
+        Long id = artistRequestService.create(user.getId(), "Radiohead").id();
+
+        artistRequestService.resolve(id, RequestStatus.ADDED, null);
+
+        assertThat(artistRequestRepository.findById(id).orElseThrow().getStatus())
+                .isEqualTo(RequestStatus.ADDED);
+    }
+
+    @Test
+    @DisplayName("resolve — CANCELED로 바뀌고 사유가 저장된다")
+    void resolveToCanceled() {
+        Long id = artistRequestService.create(user.getId(), "xyz").id();
+
+        artistRequestService.resolve(id, RequestStatus.CANCELED, "Not on our music source");
+
+        var saved = artistRequestRepository.findById(id).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(RequestStatus.CANCELED);
+        assertThat(saved.getCancelReason()).isEqualTo("Not on our music source");
+    }
+
+    @Test
+    @DisplayName("resolve — 존재하지 않는 요청이면 ARTIST_REQUEST_NOT_FOUND")
+    void resolveMissingRequest() {
+        assertThatThrownBy(() -> artistRequestService.resolve(9999L, RequestStatus.ADDED, null))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ARTIST_REQUEST_NOT_FOUND);
+    }
+
     @BeforeEach
     void setUp() {
         user = userRepository.save(User.create("test@gmail.com", "nickname"));
