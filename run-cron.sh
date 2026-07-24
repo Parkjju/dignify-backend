@@ -9,11 +9,20 @@ Usage:
   ./run-cron.sh collect <endIndex>              id 브루트포스로 트랙 수집
   ./run-cron.sh collect-artist "A" "B" ...      아티스트명으로 검색-수집 (여러 명 가능)
   ./run-cron.sh enrich-ko                       한글 로컬라이즈 보강
+  ./run-cron.sh resolve-artist                  유저가 등록 요청한 대기중 아티스트 목록 보기
+  ./run-cron.sh resolve-artist 3 7              해당 요청을 ADDED로 바꾸고 요청자에게 푸시
+                                                (곡 수집은 collect-artist로 먼저 직접 돌릴 것)
+  ./run-cron.sh cancel-artist 9 11              해당 요청을 거절 처리 (푸시 안 나감)
   ./run-cron.sh -h | --help                     이 도움말
 
 Examples:
   ./run-cron.sh collect 50000000
   ./run-cron.sh collect-artist "Radiohead" "Aphex Twin"
+  ./run-cron.sh resolve-artist                  # 먼저 목록으로 id 확인
+  ./run-cron.sh resolve-artist 3
+  REASON="Not on Apple Music" ./run-cron.sh cancel-artist 9
+
+거절 사유는 요청한 유저의 앱 화면에 그대로 보인다. REASON 없이 부르면 기본 문구가 들어간다.
 EOF
 }
 
@@ -41,8 +50,23 @@ case "$JOB" in
             exit 1
         fi
         ;;
+    resolve-artist|cancel-artist)
+        shift
+        IDS=("$@")
+        if [ "$JOB" = "cancel-artist" ] && [ ${#IDS[@]} -eq 0 ]; then
+            echo "Usage: ./run-cron.sh cancel-artist <id> [<id> ...]"
+            echo "대기중 목록은: ./run-cron.sh resolve-artist"
+            exit 1
+        fi
+        for id in "${IDS[@]}"; do
+            if ! [[ "$id" =~ ^[0-9]+$ ]]; then
+                echo "요청 id는 숫자여야 합니다: '$id'"
+                exit 1
+            fi
+        done
+        ;;
     *)
-        echo "Unknown job: $JOB (collect | collect-artist | enrich-ko)"
+        echo "Unknown job: $JOB (collect | collect-artist | enrich-ko | resolve-artist | cancel-artist)"
         exit 1
         ;;
 esac
@@ -52,6 +76,19 @@ set -a && source .env && set +a
 PROXY_PORT=5433
 APP_PORT=8080
 LOG_FILE="/tmp/dignify-bootrun.log"
+
+# 푸시는 APNs 키가 있는 라이브 서버에서만 나간다. 로컬 bootRun은 키가 없어 PushService 빈이 아예 안 뜨고,
+# 그러면 상태만 바뀌고 알림은 조용히 안 감. 그래서 수집은 로컬, 상태 변경은 라이브로 나눠 쏜다.
+LIVE_URL="${LIVE_URL:-https://dignify-backend-co77gph5gq-uc.a.run.app}"
+
+# 로컬 psql → 프록시 → Cloud SQL. 계정은 앱이 쓰는 것과 동일(application.properties 기본값).
+export PGPASSWORD="${DB_PASSWORD:-dignify}"
+PSQL=(psql -w -h localhost -p "$PROXY_PORT" -U "${DB_USERNAME:-dignify}" -d "${DB_NAME:-dignify}")
+
+# 요청 한 건의 "아티스트명|상태". 없는 id면 빈 문자열.
+fetch_request() {
+    "${PSQL[@]}" -tAF'|' -c "SELECT artist_name, status FROM artist_requests WHERE artist_request_id = $1"
+}
 
 cleanup() {
     echo ""
@@ -90,6 +127,62 @@ if ! kill -0 "$PROXY_PID" 2>/dev/null; then
     exit 1
 fi
 echo "[cron] Proxy running (PID $PROXY_PID)"
+
+# id 없이 부른 resolve-artist는 목록 조회만 한다. 앱이 필요 없으니 bootRun(약 1분) 전에 끝낸다.
+if [ "$JOB" = "resolve-artist" ] && [ ${#IDS[@]} -eq 0 ]; then
+    "${PSQL[@]}" -c "SELECT ar.artist_request_id AS id, ar.artist_name, u.nickname, ar.created_at
+                     FROM artist_requests ar JOIN users u ON u.user_id = ar.user_id
+                     WHERE ar.status = 'PENDING' ORDER BY ar.artist_request_id"
+    echo "[cron] 처리하려면: ./run-cron.sh resolve-artist <id> [<id> ...]"
+    echo "[cron] 거절하려면: ./run-cron.sh cancel-artist <id> [<id> ...]"
+    exit 0
+fi
+
+# 상태 변경만 하는 두 작업. 곡 수집은 collect-artist로 따로 돌린 뒤 부르는 것이므로 앱을 안 띄운다.
+if [ "$JOB" = "resolve-artist" ] || [ "$JOB" = "cancel-artist" ]; then
+    if [ "$JOB" = "resolve-artist" ]; then
+        NEW_STATUS="ADDED"
+        REQ_BODY='{"status":"ADDED"}'
+    else
+        REASON="${REASON:-Not available on Apple Music}"
+        NEW_STATUS="CANCELED"
+        REQ_BODY=$(jq -nc --arg r "$REASON" '{status:"CANCELED",cancelReason:$r}')
+    fi
+
+    for id in "${IDS[@]}"; do
+        ROW=$(fetch_request "$id")
+        if [ -z "$ROW" ]; then
+            echo "[cron] #$id: 그런 요청이 없습니다. 건너뜁니다."
+            continue
+        fi
+        ARTIST="${ROW%%|*}"
+        STATUS="${ROW##*|}"
+        if [ "$STATUS" != "PENDING" ]; then
+            echo "[cron] #$id '$ARTIST': 이미 $STATUS 상태입니다. 건너뜁니다."
+            continue
+        fi
+
+        # 막지는 않고 개수만 알려준다. 이름이 조금 달라도(NCT vs NCT 127) 0으로 나올 수 있어서 판단은 사람이.
+        if [ "$NEW_STATUS" = "ADDED" ]; then
+            SQL_NAME="${ARTIST//\'/\'\'}"
+            TOTAL=$("${PSQL[@]}" -tAc "SELECT COUNT(*) FROM tracks WHERE is_active AND artist_name ILIKE '%${SQL_NAME}%'")
+            echo "[cron] #$id '$ARTIST': 피드에 총 $TOTAL곡"
+        fi
+
+        CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            "$LIVE_URL/internal/artist-requests/$id/resolve" \
+            -H "X-Cron-Secret: $CRON_SECRET" -H "Content-Type: application/json" \
+            -d "$REQ_BODY")
+        if [ "$CODE" != "200" ]; then
+            echo "[cron] #$id '$ARTIST' → $NEW_STATUS 처리 실패($CODE)"
+        elif [ "$NEW_STATUS" = "ADDED" ]; then
+            echo "[cron] #$id '$ARTIST' → ADDED 처리 완료, 요청한 유저에게 푸시 발송"
+        else
+            echo "[cron] #$id '$ARTIST' → 거절 처리 완료 (사유: $REASON)"
+        fi
+    done
+    exit 0
+fi
 
 # Spring Boot 시작
 echo "[cron] Starting Spring Boot..."
