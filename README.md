@@ -141,6 +141,11 @@ Wrote tests at multiple layers with a clear separation of concerns between unit,
 | PUT | `/users/me/genres` | Replace preferred genres (0–3) |
 | POST | `/users/me/onboarding/complete` | Mark onboarding as done |
 | GET | `/users/me/hypes` | Paginated hype history (keyset pagination) |
+| GET | `/users/me/stats` | Listening/hype aggregates for the digging profile (`range=all\|week`) |
+| POST | `/users/me/device-token` | Register an APNs device token |
+| POST | `/artist-requests` | Request an artist to be added to the catalog |
+| GET | `/artist-requests` | My submitted requests |
+| DELETE | `/artist-requests/{id}` | Cancel my own request |
 
 ---
 
