@@ -71,7 +71,10 @@ public class FeedService {
             currentCursor = FeedCursor.decode(cursorString);
         }
 
-        result = trackRepository.findTracksWithSearchKeyword(searchKeyword, FeedService.FETCH_LIMIT, currentCursor.genreOffset());
+        // DB에 ASCII(')와 커브(’) 따옴표가 섞여 있어서, 어느 쪽으로 쳐도 걸리게 LIKE 단일문자 와일드카드로 치환한다.
+        // ponytail: 컬럼 쪽 REPLACE 대신 키워드만 손봄. 정규화 컬럼이 필요해지면 그때 추가.
+        String normalizedKeyword = searchKeyword.replaceAll("['‘’ʼ]", "_");
+        result = trackRepository.findTracksWithSearchKeyword(normalizedKeyword, FeedService.FETCH_LIMIT, currentCursor.genreOffset());
         List<FeedItem> feedItems = result.stream().map((track) -> {
             boolean isHyped = userHypeTrackRepository.existsByUser_IdAndTrack_Id(userId, track.getId());
             return FeedItem.from(track, isHyped);
