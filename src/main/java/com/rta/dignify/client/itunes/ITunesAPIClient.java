@@ -52,10 +52,27 @@ public class ITunesAPIClient {
                 .toList();
     }
 
-    // 아티스트명으로 트랙을 검색해 적재한다. (수동 collect용 — id 브루트포스 대신 이름 기반)
-    public List<ItunesItem> searchByArtist(String artistName) {
+    // 아티스트명 → 후보 아티스트 목록. 동명이인이 있으면 여러 건이 나오므로 판단은 호출부에서.
+    public List<ItunesItem> searchArtists(String artistName) {
         ItunesLookupResponse response = restClient.get()
-                .uri("/search?term={term}&entity=song&country=US&limit=200", artistName)
+                .uri("/search?term={term}&entity=musicArtist&country=US&limit=10", artistName)
+                .retrieve()
+                .body(ItunesLookupResponse.class);
+
+        if (response == null || response.results() == null) {
+            return List.of();
+        }
+
+        return response.results().stream()
+                .filter(item -> "artist".equals(item.wrapperType()))
+                .toList();
+    }
+
+    // artistId로 해당 아티스트의 트랙만 조회. 이름 검색과 달리 남의 곡이 섞이지 않는다.
+    // limit은 id당 적용되며 200이 상한. 200을 넘는 카탈로그는 잘린다.
+    public List<ItunesItem> lookupSongsByArtistId(long artistId) {
+        ItunesLookupResponse response = restClient.get()
+                .uri("/lookup?id={id}&entity=song&country=US&limit=200", artistId)
                 .retrieve()
                 .body(ItunesLookupResponse.class);
 

@@ -55,13 +55,39 @@ public class CronService {
     }
 
     // 아티스트명 기반 수동 collect. 단발 검색이라 @Async/루프/cronState 없이 동기 처리.
+    // 이름이 정확히 일치하는 아티스트가 딱 한 명일 때만 수집한다. 0명(로마자 표기 등으로 못 찾음)이거나
+    // 2명 이상(동명이인)이면 후보를 로그로 뱉고 중단 — 어느 쪽인지는 사람이 보고 collect-artist-id로 재실행.
     public int collectByArtist(String artistName) {
-        log.info("collect-artist '{}' searching iTunes...", artistName);
-        List<ItunesItem> items = iTunesAPIClient.searchByArtist(artistName);
-        log.info("collect-artist '{}' found {} tracks with preview — saving...", artistName, items.size());
+        String name = artistName.trim();
+        log.info("collect-artist '{}' resolving artistId...", name);
+        List<ItunesItem> candidates = iTunesAPIClient.searchArtists(name);
+        List<ItunesItem> exact = candidates.stream()
+                .filter(a -> name.equalsIgnoreCase(a.artistName()))
+                .toList();
+
+        if (exact.size() != 1) {
+            log.warn("collect-artist '{}' ABORTED — 이름이 정확히 일치하는 아티스트 {}명. 아래에서 고른 뒤 재실행: ./run-cron.sh collect-artist-id <artistId>",
+                    name, exact.size());
+            if (candidates.isEmpty()) {
+                log.warn("collect-artist '{}'   후보 없음 — iTunes에 없는 이름이거나 표기가 다름", name);
+            }
+            candidates.forEach(a -> log.warn("collect-artist '{}'   artistId={} name='{}' genre={} {}",
+                    name, a.artistId(), a.artistName(), a.primaryGenreName(), a.artistLinkUrl()));
+            return 0;
+        }
+
+        ItunesItem artist = exact.get(0);
+        log.info("collect-artist '{}' resolved → artistId={} genre={}", name, artist.artistId(), artist.primaryGenreName());
+        return collectByArtistId(artist.artistId());
+    }
+
+    // 동명이인 때문에 중단된 건을 사람이 artistId로 지정해 수집한다.
+    public int collectByArtistId(long artistId) {
+        List<ItunesItem> items = iTunesAPIClient.lookupSongsByArtistId(artistId);
+        log.info("collect-artist artistId={} found {} tracks with preview — saving...", artistId, items.size());
         int saved = cronBatchService.saveItems(items);
-        log.info("collect-artist '{}' finished — found: {}, saved: {}, skipped(dup/no-genre): {}",
-                artistName, items.size(), saved, items.size() - saved);
+        log.info("collect-artist artistId={} finished — found: {}, saved: {}, skipped(dup/no-genre): {}",
+                artistId, items.size(), saved, items.size() - saved);
         return saved;
     }
 }

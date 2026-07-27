@@ -43,6 +43,17 @@ public class CronController {
         return ResponseEntity.ok(saved);
     }
 
+    @PostMapping("/internal/cron/collect-artist-id")
+    public ResponseEntity<Integer> collectByArtistId(
+            @RequestHeader("X-Cron-Secret") String requestSecret,
+            @RequestParam long artistId) {
+        if (!cronSecret.equals(requestSecret)) {
+            throw new BusinessException(ErrorCode.CRON_SECRET_INVALID);
+        }
+
+        return ResponseEntity.ok(cronService.collectByArtistId(artistId));
+    }
+
     @PostMapping("/internal/cron/enrich-ko")
     public ResponseEntity<Void> processKoEnrichment(
             @RequestHeader("X-Cron-Secret") String requestSecret) throws InterruptedException {

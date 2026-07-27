@@ -10,6 +10,7 @@ public record ItunesItem(
         String artworkUrl100,
         String previewUrl,
         String trackViewUrl,
+        String artistLinkUrl,   // artist wrapper 전용. 동명이인 후보를 사람이 눈으로 확인할 때 쓴다.
         String primaryGenreName,
         String releaseDate,
         String country

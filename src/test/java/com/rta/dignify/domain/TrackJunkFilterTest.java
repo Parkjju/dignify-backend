@@ -9,7 +9,7 @@ class TrackJunkFilterTest {
 
     private ItunesItem item(String artist, String collection, String track) {
         return new ItunesItem("track", 1L, 2L, artist, collection, track,
-                "art", "preview", "view", "Pop", "2020-01-01T00:00:00Z", "US");
+                "art", "preview", "view", null, "Pop", "2020-01-01T00:00:00Z", "US");
     }
 
     @Test

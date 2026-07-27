@@ -7,7 +7,9 @@ run-cron.sh — Cloud SQL 프록시 + bootRun 띄우고 크론잡 트리거
 
 Usage:
   ./run-cron.sh collect <endIndex>              id 브루트포스로 트랙 수집
-  ./run-cron.sh collect-artist "A" "B" ...      아티스트명으로 검색-수집 (여러 명 가능)
+  ./run-cron.sh collect-artist "A" "B" ...      아티스트명으로 수집 (여러 명 가능)
+                                                동명이인이면 중단하고 후보 artistId를 로그에 찍는다
+  ./run-cron.sh collect-artist-id 123 456       중단된 건을 artistId로 지정해 수집
   ./run-cron.sh enrich-ko                       한글 로컬라이즈 보강
   ./run-cron.sh resolve-artist                  유저가 등록 요청한 대기중 아티스트 목록 보기
   ./run-cron.sh resolve-artist 3 7              해당 요청을 ADDED로 바꾸고 요청자에게 푸시
@@ -18,6 +20,7 @@ Usage:
 Examples:
   ./run-cron.sh collect 50000000
   ./run-cron.sh collect-artist "Radiohead" "Aphex Twin"
+  ./run-cron.sh collect-artist-id 1031084591    # "Silica Gel"처럼 동명이인이라 중단된 경우
   ./run-cron.sh resolve-artist                  # 먼저 목록으로 id 확인
   ./run-cron.sh resolve-artist 3
   REASON="Not on Apple Music" ./run-cron.sh cancel-artist 9
@@ -42,12 +45,21 @@ case "$JOB" in
         fi
         ;;
     enrich-ko) ;;
-    collect-artist)
+    collect-artist|collect-artist-id)
         shift
         ARTISTS=("$@")
         if [ ${#ARTISTS[@]} -eq 0 ]; then
             echo "Usage: ./run-cron.sh collect-artist \"Radiohead\" \"Aphex Twin\" ..."
+            echo "       ./run-cron.sh collect-artist-id 1031084591 ..."
             exit 1
+        fi
+        if [ "$JOB" = "collect-artist-id" ]; then
+            for a in "${ARTISTS[@]}"; do
+                if ! [[ "$a" =~ ^[0-9]+$ ]]; then
+                    echo "artistId는 숫자여야 합니다: '$a'"
+                    exit 1
+                fi
+            done
         fi
         ;;
     resolve-artist|cancel-artist)
@@ -66,7 +78,7 @@ case "$JOB" in
         done
         ;;
     *)
-        echo "Unknown job: $JOB (collect | collect-artist | enrich-ko | resolve-artist | cancel-artist)"
+        echo "Unknown job: $JOB (collect | collect-artist | collect-artist-id | enrich-ko | resolve-artist | cancel-artist)"
         exit 1
         ;;
 esac
@@ -209,16 +221,18 @@ for i in $(seq 1 60); do
 done
 
 # 크론잡 트리거
-if [ "$JOB" = "collect-artist" ]; then
-    # 앱 쪽 진행 로그(searching/found/skipped)를 콘솔로 흘려줌. 루프 끝나면 정리.
+if [ "$JOB" = "collect-artist" ] || [ "$JOB" = "collect-artist-id" ]; then
+    # 두 잡은 파라미터만 다르고 흐름이 같다. 엔드포인트 경로는 잡 이름과 동일.
+    if [ "$JOB" = "collect-artist" ]; then PARAM="name"; else PARAM="artistId"; fi
+    # 앱 쪽 진행 로그(resolving/found/ABORTED/skipped)를 콘솔로 흘려줌. 루프 끝나면 정리.
     tail -n 0 -f "$LOG_FILE" | grep --line-buffered -E "collect-artist|Skipping track|WARN|ERROR|Exception|Caused by|^[[:space:]]+at " &
     TAIL_PID=$!
     # 아티스트 목록을 순회하며 동기 검색-적재. 각 호출은 저장 개수(200 OK 본문)를 반환.
     for artist in "${ARTISTS[@]}"; do
         echo "[cron] Collecting artist: $artist"
         BODY=$(curl -s -w "\n%{http_code}" -X POST \
-            "http://localhost:$APP_PORT/internal/cron/collect-artist" \
-            --data-urlencode "name=$artist" \
+            "http://localhost:$APP_PORT/internal/cron/$JOB" \
+            --data-urlencode "$PARAM=$artist" \
             -H "X-Cron-Secret: $CRON_SECRET")
         CODE=$(echo "$BODY" | tail -1)
         SAVED=$(echo "$BODY" | sed '$d')
