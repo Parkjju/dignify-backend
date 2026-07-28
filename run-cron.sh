@@ -15,6 +15,8 @@ Usage:
   ./run-cron.sh resolve-artist 3 7              해당 요청을 ADDED로 바꾸고 요청자에게 푸시
                                                 (곡 수집은 collect-artist로 먼저 직접 돌릴 것)
   ./run-cron.sh cancel-artist 9 11              해당 요청을 거절 처리 (푸시 안 나감)
+  ./run-cron.sh push "제목" "본문"               전체 유저에게 공지 푸시 (확인 후 발송)
+  ./run-cron.sh push-users                      기기 토큰이 등록된 유저 목록 (TO에 넣을 userId)
   ./run-cron.sh -h | --help                     이 도움말
 
 Examples:
@@ -24,8 +26,15 @@ Examples:
   ./run-cron.sh resolve-artist                  # 먼저 목록으로 id 확인
   ./run-cron.sh resolve-artist 3
   REASON="Not on Apple Music" ./run-cron.sh cancel-artist 9
+  ./run-cron.sh push "새 큐레이션" "이번 주 세트가 올라왔어요"
+  TO=3 ./run-cron.sh push "제목" "본문"          # userId=3 기기에만 (테스트 발송)
+  FORCE=true ./run-cron.sh push "제목" "본문"    # 새벽인 유저까지 전부
 
 거절 사유는 요청한 유저의 앱 화면에 그대로 보인다. REASON 없이 부르면 기본 문구가 들어간다.
+push 문구는 보낸 그대로 알림에 뜬다(번역 없음). 기기 로컬 09~22시인 유저에게만 나가고,
+그 밖은 건너뛴다 — 시간 무시하고 보내려면 FORCE=true.
+TO를 주면 그 유저 기기에만, 시간대 상관없이, 확인 없이 바로 나간다. 전체 발송 전 본인 기기로
+찍어보는 용도. userId는 push-users로 확인.
 EOF
 }
 
@@ -77,8 +86,22 @@ case "$JOB" in
             fi
         done
         ;;
+    push)
+        TITLE="$2"
+        BODY="$3"
+        if [ -z "$TITLE" ] || [ -z "$BODY" ]; then
+            echo "Usage: ./run-cron.sh push \"제목\" \"본문\""
+            exit 1
+        fi
+        if [ -n "$TO" ] && ! [[ "$TO" =~ ^[0-9]+$ ]]; then
+            echo "TO는 userId(숫자)여야 합니다: '$TO'"
+            echo "userId 목록은: ./run-cron.sh push-users"
+            exit 1
+        fi
+        ;;
+    push-users) ;;
     *)
-        echo "Unknown job: $JOB (collect | collect-artist | collect-artist-id | enrich-ko | resolve-artist | cancel-artist)"
+        echo "Unknown job: $JOB (collect | collect-artist | collect-artist-id | enrich-ko | resolve-artist | cancel-artist | push | push-users)"
         exit 1
         ;;
 esac
@@ -92,6 +115,45 @@ LOG_FILE="/tmp/dignify-bootrun.log"
 # 푸시는 APNs 키가 있는 라이브 서버에서만 나간다. 로컬 bootRun은 키가 없어 PushService 빈이 아예 안 뜨고,
 # 그러면 상태만 바뀌고 알림은 조용히 안 감. 그래서 수집은 로컬, 상태 변경은 라이브로 나눠 쏜다.
 LIVE_URL="${LIVE_URL:-https://dignify-backend-co77gph5gq-uc.a.run.app}"
+
+# 공지 푸시. DB도 앱도 안 쓰니 프록시/bootRun 전에 끝낸다.
+# 전체 발송은 회수가 안 되므로 문구를 보여주고 한 번 묻는다. TO로 한 명만 쏠 땐 안 묻는다 —
+# 본인 기기 테스트용이라 매번 y를 치게 하면 반복이 성가시다.
+if [ "$JOB" = "push" ]; then
+    FORCE="${FORCE:-false}"
+    echo "제목: $TITLE"
+    echo "본문: $BODY"
+    if [ -n "$TO" ]; then
+        echo "대상: userId=$TO (이 유저 기기에만, 시간대 무시)"
+    else
+        [ "$FORCE" = "true" ] && echo "(FORCE=true — 로컬 새벽인 유저에게도 나갑니다)"
+        read -r -p "전체 유저에게 발송할까요? (y/N) " CONFIRM
+        if [ "$CONFIRM" != "y" ]; then
+            echo "[cron] 취소했습니다."
+            exit 0
+        fi
+    fi
+
+    RESP=$(curl -s -w "\n%{http_code}" -X POST "$LIVE_URL/internal/push/broadcast" \
+        -H "X-Cron-Secret: $CRON_SECRET" -H "Content-Type: application/json" \
+        -d "$(jq -nc --arg t "$TITLE" --arg b "$BODY" --argjson f "$FORCE" \
+                --argjson u "${TO:-null}" '{title:$t,body:$b,force:$f,userId:$u}')")
+    CODE=$(echo "$RESP" | tail -1)
+    SENT=$(echo "$RESP" | sed '$d')
+    if [ "$CODE" != "200" ]; then
+        echo "[cron] 발송 실패($CODE): $SENT"
+        exit 1
+    fi
+    echo "[cron] $SENT대에 발송했습니다."
+    if [ "$SENT" = "0" ]; then
+        if [ -n "$TO" ]; then
+            echo "[cron] userId=$TO 로 등록된 기기 토큰이 없습니다. 목록: ./run-cron.sh push-users"
+        else
+            echo "[cron] 등록된 토큰이 없거나 전부 로컬 새벽입니다. 시간 무시하려면 FORCE=true."
+        fi
+    fi
+    exit 0
+fi
 
 # 로컬 psql → 프록시 → Cloud SQL. 계정은 앱이 쓰는 것과 동일(application.properties 기본값).
 export PGPASSWORD="${DB_PASSWORD:-dignify}"
@@ -139,6 +201,17 @@ if ! kill -0 "$PROXY_PID" 2>/dev/null; then
     exit 1
 fi
 echo "[cron] Proxy running (PID $PROXY_PID)"
+
+# push의 TO에 넣을 userId를 찾는 용도. 토큰이 있는 유저만 나온다 — 없으면 쏴봐야 안 간다.
+if [ "$JOB" = "push-users" ]; then
+    "${PSQL[@]}" -c "SELECT u.user_id, u.nickname, COUNT(*) AS devices,
+                            STRING_AGG(DISTINCT COALESCE(t.time_zone, '(없음)'), ', ') AS time_zones,
+                            STRING_AGG(DISTINCT t.environment, ', ') AS envs
+                     FROM user_device_tokens t JOIN users u ON u.user_id = t.user_id
+                     GROUP BY u.user_id, u.nickname ORDER BY u.user_id"
+    echo "[cron] 본인 기기로만 쏘려면: TO=<user_id> ./run-cron.sh push \"제목\" \"본문\""
+    exit 0
+fi
 
 # id 없이 부른 resolve-artist는 목록 조회만 한다. 앱이 필요 없으니 bootRun(약 1분) 전에 끝낸다.
 if [ "$JOB" = "resolve-artist" ] && [ ${#IDS[@]} -eq 0 ]; then
