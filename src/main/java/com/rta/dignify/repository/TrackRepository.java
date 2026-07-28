@@ -8,29 +8,31 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 public interface TrackRepository extends JpaRepository<Track, Long> {
-    // 활성 큐레이션 곡은 세트(/feed/curation)가 따로 앞세우므로 일반 피드에서 뺀다.
-    // 예전엔 같은 조인으로 priority DESC 정렬해 끌어올렸는데, 그대로 두면 세트에서 한 번
-    // 보고 일반 피드 첫 장에서 또 만난다. 끌어올리기가 세트로 대체된 셈이다.
+    // 세트(/feed/curation)에 들어가는 곡만 일반 피드에서 뺀다. 예전엔 같은 조인으로
+    // priority DESC 정렬해 끌어올렸는데, 그대로 두면 세트에서 한 번 보고 일반 피드 첫 장에서
+    // 또 만난다. 끌어올리기가 세트로 대체된 셈이다.
+    //
+    // 제외 범위가 세트 정의(priority 상위 :setSize)와 정확히 같아야 한다. 활성 행 전부를
+    // 빼면 세트에 못 든 곡이 피드에서도 빠져 어디에도 안 나온다.
     @Query(value = "SELECT t.* FROM tracks t " +
             "LEFT JOIN users_hype_tracks uht ON t.track_id = uht.track_id AND uht.user_id = :userId " +
             "JOIN user_genres ug ON ug.genre_id = t.genre_id AND ug.user_id = :userId " +
-            "LEFT JOIN curation_tracks c ON c.track_id = t.track_id AND c.is_active IS TRUE " +
-            "WHERE uht.user_hype_track_id IS NULL AND t.is_active IS TRUE AND c.curation_track_id IS NULL " +
+            "WHERE uht.user_hype_track_id IS NULL AND t.is_active IS TRUE " +
+            "AND t.track_id NOT IN (SELECT ct.track_id FROM curation_tracks ct WHERE ct.is_active IS TRUE ORDER BY ct.priority DESC, ct.curation_track_id LIMIT :setSize) " +
             "ORDER BY md5(t.track_id::text || ':' || CAST(:seed AS text)) " +
             "LIMIT :limit " +
             "OFFSET :offset", nativeQuery = true)
-    List<Track> findByGenreIdsExceptHypedTrackWithLimitAndOffset(@Param("userId") Long userId, @Param("limit") Integer limit, @Param("offset") Integer offset, @Param("seed") Integer seed);
+    List<Track> findByGenreIdsExceptHypedTrackWithLimitAndOffset(@Param("userId") Long userId, @Param("limit") Integer limit, @Param("offset") Integer offset, @Param("seed") Integer seed, @Param("setSize") int setSize);
 
     @Query(value = "SELECT t.* FROM tracks t " +
             "LEFT JOIN users_hype_tracks uht ON t.track_id = uht.track_id AND uht.user_id = :userId " +
             "LEFT JOIN user_genres ug ON ug.genre_id = t.genre_id AND ug.user_id = :userId " +
-            "LEFT JOIN curation_tracks c ON c.track_id = t.track_id AND c.is_active IS TRUE " +
             "WHERE uht.user_hype_track_id IS NULL AND t.is_active IS TRUE AND ug.user_genre_id IS NULL " +
-            "AND c.curation_track_id IS NULL " +
+            "AND t.track_id NOT IN (SELECT ct.track_id FROM curation_tracks ct WHERE ct.is_active IS TRUE ORDER BY ct.priority DESC, ct.curation_track_id LIMIT :setSize) " +
             "ORDER BY md5(t.track_id::text || ':' || CAST(:seed AS text)) " +
             "LIMIT :limit " +
             "OFFSET :offset", nativeQuery = true)
-    List<Track> findGeneralTracksByGenreIdsExceptHypedTrackWithLimitAndOffset(@Param("userId") Long userId, @Param("limit") Integer limit, @Param("offset") Integer offset, @Param("seed") Integer seed);
+    List<Track> findGeneralTracksByGenreIdsExceptHypedTrackWithLimitAndOffset(@Param("userId") Long userId, @Param("limit") Integer limit, @Param("offset") Integer offset, @Param("seed") Integer seed, @Param("setSize") int setSize);
 
     @Query(value = "SELECT t FROM Track t " +
             "WHERE (LOWER(t.artistName) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) OR LOWER(t.trackName) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) " +

@@ -10,6 +10,7 @@ import com.rta.dignify.repository.CurationTrackRepository;
 import com.rta.dignify.repository.TrackRepository;
 import com.rta.dignify.repository.UserHypeTrackRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +22,10 @@ import java.util.concurrent.ThreadLocalRandom;
 @Service
 public class FeedService {
     static final Integer FETCH_LIMIT = 10;
+
+    /// 세트 크기. 실측 첫 세션이 6곡·1~2분이라 5곡이 한 세션에 들어가는 상한이다.
+    /// 늘리면 유저가 세트를 못 끝내고, 일반 피드는 그만큼 뒤로 밀린다.
+    public static final int CURATION_SET_SIZE = 5;
 
     private final TrackRepository trackRepository;
     private final UserHypeTrackRepository userHypeTrackRepository;
@@ -39,7 +44,7 @@ public class FeedService {
         }
 
         if (currentCursor.phase() == FeedCursor.Phase.GENRE) {
-            result = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(userId, FeedService.FETCH_LIMIT, currentCursor.genreOffset(), currentCursor.seed());
+            result = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(userId, FeedService.FETCH_LIMIT, currentCursor.genreOffset(), currentCursor.seed(), CURATION_SET_SIZE);
         } else {
             result = new ArrayList<>();
         }
@@ -50,7 +55,7 @@ public class FeedService {
             response = new FeedResponse(feedItems, newCursor.encode(), true, false);
         } else {
             // 장르 조회에서 부족한 결과를 general 조회로 채우기 → 이 페이지는 장르 풀 소진.
-            List<Track> paddingResponse = trackRepository.findGeneralTracksByGenreIdsExceptHypedTrackWithLimitAndOffset(userId, FETCH_LIMIT - result.size(), currentCursor.generalOffset(), currentCursor.seed());
+            List<Track> paddingResponse = trackRepository.findGeneralTracksByGenreIdsExceptHypedTrackWithLimitAndOffset(userId, FETCH_LIMIT - result.size(), currentCursor.generalOffset(), currentCursor.seed(), CURATION_SET_SIZE);
             result.addAll(paddingResponse);
             List<FeedItem> feedItems = result.stream().map((track) -> FeedItem.from(track, false)).toList();
             newCursor = new FeedCursor(FeedCursor.Phase.GENERAL, currentCursor.genreOffset() + (FETCH_LIMIT - paddingResponse.size()), currentCursor.generalOffset() + paddingResponse.size(), currentCursor.seed());
@@ -67,8 +72,8 @@ public class FeedService {
     /// 하입 여부만 유저별로 채워, 이미 담은 곡이 안 담긴 것처럼 보이지 않게 한다.
     @Transactional(readOnly = true)
     public CurationResponse getCurationFeed(Long userId) {
-        List<Track> tracks = curationTrackRepository.findActiveOrdered().stream()
-                .map(CurationTrack::getTrack).toList();
+        List<Track> tracks = curationTrackRepository.findActiveOrdered(PageRequest.of(0, CURATION_SET_SIZE))
+                .stream().map(CurationTrack::getTrack).toList();
         List<FeedItem> items = tracks.stream()
                 .map(track -> FeedItem.from(track, isHyped(userId, track)))
                 .toList();

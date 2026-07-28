@@ -1,5 +1,6 @@
 package com.rta.dignify.repository;
 
+import com.rta.dignify.service.FeedService;
 import com.rta.dignify.domain.*;
 import com.rta.dignify.global.config.JpaAuditingConfig;
 import org.junit.jupiter.api.DisplayName;
@@ -52,10 +53,10 @@ public class TrackRepositoryTest {
         entityManager.persistAndFlush(userWithRockGenre);
 
         // 동일 seed로 순서가 안정적이므로 offset 페이징이 겹치지 않는지 검증(순서 자체는 seed 셔플이라 비결정적)
-        List<Track> result1 = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 3, 0, 0);
+        List<Track> result1 = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 3, 0, 0, FeedService.CURATION_SET_SIZE);
         assertThat(result1).hasSize(3);
 
-        List<Track> result2 = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 3, 3, 0);
+        List<Track> result2 = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 3, 3, 0, FeedService.CURATION_SET_SIZE);
         assertThat(result2).hasSize(3);
 
         List<Long> combined = Stream.concat(result1.stream(), result2.stream()).map(Track::getId).toList();
@@ -91,7 +92,7 @@ public class TrackRepositoryTest {
         UserGenre userWithRockGenre = UserGenre.create(user, rockGenre);
         entityManager.persistAndFlush(userWithRockGenre);
 
-        List<Track> result = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 3, 0, 0);
+        List<Track> result = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 3, 0, 0, FeedService.CURATION_SET_SIZE);
         assertThat(result).extracting(Track::getId).containsExactlyInAnyOrder(rockTrack1.getId(), rockTrack3.getId());
     }
 
@@ -127,14 +128,14 @@ public class TrackRepositoryTest {
         entityManager.persistAndFlush(userWithRockGenre);
 
         // 선호 장르인 Rock 트랙만 10개 조회, 발라드 트랙은 조회되면 안됨
-        assertThat(trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 20, 0, 0)).hasSize(10)
+        assertThat(trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 20, 0, 0, FeedService.CURATION_SET_SIZE)).hasSize(10)
                 .extracting(Track::getGenre).extracting(Genre::getGenreNameKo).doesNotContain("발라드");
 
         // 장르 선호 추가
         UserGenre userWithBalladGenre = UserGenre.create(user, balladGenre);
         entityManager.persistAndFlush(userWithBalladGenre);
 
-        assertThat(trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 20, 0, 0)).hasSize(20);
+        assertThat(trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 20, 0, 0, FeedService.CURATION_SET_SIZE)).hasSize(20);
     }
 
     @Test
