@@ -25,6 +25,6 @@ public class PushInternalController {
     @PostMapping("/internal/push/broadcast")
     public ResponseEntity<Integer> broadcast(@RequestHeader("X-Cron-Secret") String secret, @Valid @RequestBody PushBroadcast body) {
         if (!cronSecret.equals(secret)) throw new BusinessException(ErrorCode.CRON_SECRET_INVALID);
-        return ResponseEntity.ok(pushService.broadcast(body.title(), body.body(), body.force(), body.userId()));
+        return ResponseEntity.ok(pushService.broadcast(body.title(), body.body(), body.force(), body.userId(), body.minBuild()));
     }
 }

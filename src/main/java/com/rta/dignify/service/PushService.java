@@ -53,7 +53,11 @@ public class PushService {
     ///
     /// userId를 주면 그 유저 기기에만 보내고 시간대도 안 본다. 본인 기기로 미리 찍어보는
     /// 용도라, 지금이 몇 시든 눌렀을 때 와야 확인이 된다.
-    public int broadcast(String title, String body, boolean force, Long userId) {
+    ///
+    /// minBuild를 주면 그 빌드 이상인 기기에만 나간다. 신기능 안내를 구버전 유저가 받으면
+    /// 눌러도 그 화면이 없어서다. 빌드를 아직 모르는 기기(app_build null)는 구버전으로 치고 뺀다 —
+    /// 앱을 한 번 켜야 채워지는 값이라, 확실할 때만 보내는 쪽이 맞다.
+    public int broadcast(String title, String body, boolean force, Long userId, Integer minBuild) {
         String payload = new SimpleApnsPayloadBuilder()
                 .setAlertTitle(title)
                 .setAlertBody(body)
@@ -66,6 +70,7 @@ public class PushService {
 
         int sent = 0;
         for (UserDeviceToken t : targets) {
+            if (!meetsMinBuild(t.getAppBuild(), minBuild)) continue;
             if (userId == null && !force && !isAwakeHour(t.getTimeZone(), Instant.now())) continue;
             send(t, payload);
             sent++;
@@ -82,6 +87,12 @@ public class PushService {
                 tokenRepository.deleteById(t.getId());   // deleteById 자체가 트랜잭션
             }
         });
+    }
+
+    /// minBuild가 없으면 전부 통과. 있으면 빌드를 아는 기기만, 그중 기준 이상만 통과한다.
+    static boolean meetsMinBuild(Integer appBuild, Integer minBuild) {
+        if (minBuild == null) return true;
+        return appBuild != null && appBuild >= minBuild;
     }
 
     /// 타임존은 앱이 보낸 문자열이라 그대로 믿을 수 없다. 비었거나 파싱이 안 되면 UTC로 친다 —

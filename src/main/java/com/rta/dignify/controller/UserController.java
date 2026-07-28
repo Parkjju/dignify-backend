@@ -54,8 +54,9 @@ public class UserController {
 
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PostMapping("/me/device-token")
-    public void registerDeviceToken(@AuthenticationPrincipal Long userId, @RequestBody @Valid DeviceTokenRegister request) {
-        deviceTokenService.register(userId, request.token(), request.environment(), request.timeZone());
+    public void registerDeviceToken(@AuthenticationPrincipal Long userId, @RequestBody @Valid DeviceTokenRegister request,
+                                    @RequestHeader(value = "User-Agent", required = false) String userAgent) {
+        deviceTokenService.register(userId, request.token(), request.environment(), request.timeZone(), userAgent);
     }
 
     @GetMapping("/me/stats")

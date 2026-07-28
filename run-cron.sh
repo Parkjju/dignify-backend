@@ -29,12 +29,17 @@ Examples:
   ./run-cron.sh push "새 큐레이션" "이번 주 세트가 올라왔어요"
   TO=3 ./run-cron.sh push "제목" "본문"          # userId=3 기기에만 (테스트 발송)
   FORCE=true ./run-cron.sh push "제목" "본문"    # 새벽인 유저까지 전부
+  MIN_BUILD=12 ./run-cron.sh push "제목" "본문"  # 빌드 12(1.0.6) 이상 기기에만
 
 거절 사유는 요청한 유저의 앱 화면에 그대로 보인다. REASON 없이 부르면 기본 문구가 들어간다.
 push 문구는 보낸 그대로 알림에 뜬다(번역 없음). 기기 로컬 09~22시인 유저에게만 나가고,
 그 밖은 건너뛴다 — 시간 무시하고 보내려면 FORCE=true.
 TO를 주면 그 유저 기기에만, 시간대 상관없이, 확인 없이 바로 나간다. 전체 발송 전 본인 기기로
 찍어보는 용도. userId는 push-users로 확인.
+
+MIN_BUILD는 앱 빌드 번호(CFBundleVersion) 기준이다. 구버전에 없는 화면을 안내할 때 쓴다 —
+받아도 눌러보면 그 화면이 없어서다. 빌드가 아직 안 잡힌 기기(앱을 한 번도 안 켠 유저)는 빠진다.
+빌드별 기기 수는 push-users에 나온다.
 EOF
 }
 
@@ -98,6 +103,11 @@ case "$JOB" in
             echo "userId 목록은: ./run-cron.sh push-users"
             exit 1
         fi
+        if [ -n "$MIN_BUILD" ] && ! [[ "$MIN_BUILD" =~ ^[0-9]+$ ]]; then
+            echo "MIN_BUILD는 빌드 번호(숫자)여야 합니다: '$MIN_BUILD'"
+            echo "1.0.6은 빌드 12. 빌드별 기기 수는: ./run-cron.sh push-users"
+            exit 1
+        fi
         ;;
     push-users) ;;
     *)
@@ -123,6 +133,7 @@ if [ "$JOB" = "push" ]; then
     FORCE="${FORCE:-false}"
     echo "제목: $TITLE"
     echo "본문: $BODY"
+    [ -n "$MIN_BUILD" ] && echo "대상 빌드: $MIN_BUILD 이상 (그 아래와 빌드 미확인 기기는 빠집니다)"
     if [ -n "$TO" ]; then
         echo "대상: userId=$TO (이 유저 기기에만, 시간대 무시)"
     else
@@ -137,7 +148,8 @@ if [ "$JOB" = "push" ]; then
     RESP=$(curl -s -w "\n%{http_code}" -X POST "$LIVE_URL/internal/push/broadcast" \
         -H "X-Cron-Secret: $CRON_SECRET" -H "Content-Type: application/json" \
         -d "$(jq -nc --arg t "$TITLE" --arg b "$BODY" --argjson f "$FORCE" \
-                --argjson u "${TO:-null}" '{title:$t,body:$b,force:$f,userId:$u}')")
+                --argjson u "${TO:-null}" --argjson mb "${MIN_BUILD:-null}" \
+                '{title:$t,body:$b,force:$f,userId:$u,minBuild:$mb}')")
     CODE=$(echo "$RESP" | tail -1)
     SENT=$(echo "$RESP" | sed '$d')
     if [ "$CODE" != "200" ]; then
@@ -148,6 +160,8 @@ if [ "$JOB" = "push" ]; then
     if [ "$SENT" = "0" ]; then
         if [ -n "$TO" ]; then
             echo "[cron] userId=$TO 로 등록된 기기 토큰이 없습니다. 목록: ./run-cron.sh push-users"
+        elif [ -n "$MIN_BUILD" ]; then
+            echo "[cron] 빌드 $MIN_BUILD 이상인 기기가 없거나 전부 로컬 새벽입니다. 빌드별 기기 수: ./run-cron.sh push-users"
         else
             echo "[cron] 등록된 토큰이 없거나 전부 로컬 새벽입니다. 시간 무시하려면 FORCE=true."
         fi
@@ -205,11 +219,16 @@ echo "[cron] Proxy running (PID $PROXY_PID)"
 # push의 TO에 넣을 userId를 찾는 용도. 토큰이 있는 유저만 나온다 — 없으면 쏴봐야 안 간다.
 if [ "$JOB" = "push-users" ]; then
     "${PSQL[@]}" -c "SELECT u.user_id, u.nickname, COUNT(*) AS devices,
+                            STRING_AGG(DISTINCT COALESCE(t.app_build::text, '(미확인)'), ', ') AS builds,
                             STRING_AGG(DISTINCT COALESCE(t.time_zone, '(없음)'), ', ') AS time_zones,
                             STRING_AGG(DISTINCT t.environment, ', ') AS envs
                      FROM user_device_tokens t JOIN users u ON u.user_id = t.user_id
                      GROUP BY u.user_id, u.nickname ORDER BY u.user_id"
+    # MIN_BUILD를 걸기 전에 몇 대나 남는지 보라고. 배포 직후엔 최신 빌드가 몇 대 안 된다.
+    "${PSQL[@]}" -c "SELECT COALESCE(app_build::text, '(미확인)') AS build, COUNT(*) AS devices
+                     FROM user_device_tokens GROUP BY app_build ORDER BY app_build DESC NULLS LAST"
     echo "[cron] 본인 기기로만 쏘려면: TO=<user_id> ./run-cron.sh push \"제목\" \"본문\""
+    echo "[cron] 특정 빌드 이상만: MIN_BUILD=12 ./run-cron.sh push \"제목\" \"본문\"   # 12=1.0.6"
     exit 0
 fi
 

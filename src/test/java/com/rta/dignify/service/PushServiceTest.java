@@ -26,6 +26,22 @@ class PushServiceTest {
     }
 
     @Test
+    @DisplayName("minBuild가 없으면 빌드를 안 봐도 전부 나간다")
+    void noMinBuildSendsToAll() {
+        assertThat(PushService.meetsMinBuild(12, null)).isTrue();
+        assertThat(PushService.meetsMinBuild(null, null)).isTrue();
+    }
+
+    @Test
+    @DisplayName("minBuild가 있으면 기준 미만과 빌드 미확인 기기는 빠진다")
+    void minBuildExcludesOlderAndUnknown() {
+        assertThat(PushService.meetsMinBuild(12, 12)).isTrue();
+        assertThat(PushService.meetsMinBuild(13, 12)).isTrue();
+        assertThat(PushService.meetsMinBuild(11, 12)).isFalse();
+        assertThat(PushService.meetsMinBuild(null, 12)).isFalse();
+    }
+
+    @Test
     @DisplayName("타임존이 없거나 이상하면 UTC로 친다 — 발송이 죽지 않는다")
     void fallsBackToUtc() {
         // 04:00Z는 UTC 기준 새벽이라 건너뛰는 쪽

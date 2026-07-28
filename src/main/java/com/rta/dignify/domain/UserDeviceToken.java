@@ -32,23 +32,33 @@ public class UserDeviceToken extends BaseTimeEntity {
     @Column(name = "time_zone", length = 64)
     private String timeZone;
 
-    private UserDeviceToken(User user, String token, String environment, String timeZone) {
+    /// 앱 빌드 번호(CFBundleVersion). 앱이 보내주는 게 아니라 URLSession 기본 User-Agent
+    /// ("dignify/12 CFNetwork/... Darwin/...")에서 서버가 주워 담는다 — 그래야 이미 심사 통과해
+    /// 배포된 버전까지 소급해서 갈라 쏠 수 있다. 못 읽으면 null이고, 발송 측은 null을 구버전으로 친다.
+    @Column(name = "app_build")
+    private Integer appBuild;
+
+    private UserDeviceToken(User user, String token, String environment, String timeZone, Integer appBuild) {
         this.user = user;
         this.token = token;
         this.environment = environment;
         this.timeZone = timeZone;
+        this.appBuild = appBuild;
     }
 
-    public static UserDeviceToken create(User user, String token, String environment, String timeZone) {
-        return new UserDeviceToken(user, token, environment, timeZone);
+    public static UserDeviceToken create(User user, String token, String environment, String timeZone, Integer appBuild) {
+        return new UserDeviceToken(user, token, environment, timeZone, appBuild);
     }
 
-    /// 재등록 시 타임존이 비어 오면(구버전 앱) 기존 값을 지우지 않는다.
-    public void reassign(User user, String environment, String timeZone) {
+    /// 재등록 시 타임존이나 빌드가 비어 오면(구버전 앱, UA 파싱 실패) 기존 값을 지우지 않는다.
+    public void reassign(User user, String environment, String timeZone, Integer appBuild) {
         this.user = user;
         this.environment = environment;
         if (timeZone != null && !timeZone.isBlank()) {
             this.timeZone = timeZone;
+        }
+        if (appBuild != null) {
+            this.appBuild = appBuild;
         }
     }
 }

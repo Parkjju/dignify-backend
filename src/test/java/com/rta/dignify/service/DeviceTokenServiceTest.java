@@ -16,6 +16,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest
 @Transactional
 public class DeviceTokenServiceTest {
+    /// 실제로 들어오는 UA 형태 (Cloud Run 로그 기준). 앞 숫자가 CFBundleVersion.
+    static final String UA_12 = "dignify/12 CFNetwork/3860.700.1 Darwin/25.6.0";
+
     @Autowired
     DeviceTokenService deviceTokenService;
 
@@ -30,20 +33,41 @@ public class DeviceTokenServiceTest {
     @Test
     @DisplayName("신규 토큰 등록 — row가 생성된다")
     void registerNewToken() {
-        deviceTokenService.register(user.getId(), "token-abc", "sandbox", "Asia/Seoul");
+        deviceTokenService.register(user.getId(), "token-abc", "sandbox", "Asia/Seoul", UA_12);
 
         assertThat(userDeviceTokenRepository.findAll()).hasSize(1);
         UserDeviceToken saved = userDeviceTokenRepository.findByToken("token-abc").orElseThrow();
         assertThat(saved.getUser().getId()).isEqualTo(user.getId());
         assertThat(saved.getEnvironment()).isEqualTo("sandbox");
         assertThat(saved.getTimeZone()).isEqualTo("Asia/Seoul");
+        assertThat(saved.getAppBuild()).isEqualTo(12);
+    }
+
+    @Test
+    @DisplayName("UA에서 빌드 번호를 뽑는다 — 못 읽으면 null")
+    void parsesAppBuildFromUserAgent() {
+        assertThat(DeviceTokenService.parseAppBuild(UA_12)).isEqualTo(12);
+        assertThat(DeviceTokenService.parseAppBuild("Dignify/7 CFNetwork/1.0 Darwin/1.0")).isEqualTo(7);
+        assertThat(DeviceTokenService.parseAppBuild(null)).isNull();
+        assertThat(DeviceTokenService.parseAppBuild("curl/8.7.1")).isNull();
+        // 자릿수가 말이 안 되면 Integer로 못 담는다. 터지느니 모르는 걸로 친다.
+        assertThat(DeviceTokenService.parseAppBuild("dignify/99999999999 CFNetwork/1.0")).isNull();
+    }
+
+    @Test
+    @DisplayName("UA를 못 읽은 재등록 — 기존 빌드를 지우지 않는다")
+    void reRegisterWithoutUserAgentKeepsBuild() {
+        deviceTokenService.register(user.getId(), "token-abc", "sandbox", "Asia/Seoul", UA_12);
+        deviceTokenService.register(user.getId(), "token-abc", "sandbox", "Asia/Seoul", null);
+
+        assertThat(userDeviceTokenRepository.findByToken("token-abc").orElseThrow().getAppBuild()).isEqualTo(12);
     }
 
     @Test
     @DisplayName("같은 토큰 재등록 — 중복 없이 environment만 갱신된다")
     void reRegisterUpdatesInPlace() {
-        deviceTokenService.register(user.getId(), "token-abc", "sandbox", "Asia/Seoul");
-        deviceTokenService.register(user.getId(), "token-abc", "production", "America/Phoenix");
+        deviceTokenService.register(user.getId(), "token-abc", "sandbox", "Asia/Seoul", UA_12);
+        deviceTokenService.register(user.getId(), "token-abc", "production", "America/Phoenix", UA_12);
 
         assertThat(userDeviceTokenRepository.findAll()).hasSize(1);   // 새 row 안 생김
         assertThat(userDeviceTokenRepository.findByToken("token-abc").orElseThrow().getEnvironment())
@@ -55,8 +79,8 @@ public class DeviceTokenServiceTest {
     @Test
     @DisplayName("구버전 앱이 타임존 없이 재등록 — 기존 타임존을 지우지 않는다")
     void reRegisterWithoutTimeZoneKeepsIt() {
-        deviceTokenService.register(user.getId(), "token-abc", "sandbox", "Asia/Seoul");
-        deviceTokenService.register(user.getId(), "token-abc", "production", null);
+        deviceTokenService.register(user.getId(), "token-abc", "sandbox", "Asia/Seoul", UA_12);
+        deviceTokenService.register(user.getId(), "token-abc", "production", null, null);
 
         assertThat(userDeviceTokenRepository.findByToken("token-abc").orElseThrow().getTimeZone())
                 .isEqualTo("Asia/Seoul");
@@ -66,8 +90,8 @@ public class DeviceTokenServiceTest {
     @DisplayName("같은 토큰이 다른 유저로 등록 — 소유자가 이전된다(토큰 unique)")
     void reassignToAnotherUser() {
         User other = userRepository.save(User.create("other@gmail.com", "other"));
-        deviceTokenService.register(user.getId(), "token-abc", "sandbox", "Asia/Seoul");
-        deviceTokenService.register(other.getId(), "token-abc", "sandbox", "Asia/Seoul");
+        deviceTokenService.register(user.getId(), "token-abc", "sandbox", "Asia/Seoul", UA_12);
+        deviceTokenService.register(other.getId(), "token-abc", "sandbox", "Asia/Seoul", UA_12);
 
         assertThat(userDeviceTokenRepository.findAll()).hasSize(1);
         assertThat(userDeviceTokenRepository.findByToken("token-abc").orElseThrow().getUser().getId())
