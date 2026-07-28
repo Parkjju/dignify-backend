@@ -1,5 +1,6 @@
 package com.rta.dignify.controller;
 
+import com.rta.dignify.dto.feed.CurationResponse;
 import com.rta.dignify.dto.feed.FeedResponse;
 import com.rta.dignify.service.FeedService;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,12 @@ public class FeedController {
     @GetMapping
     public FeedResponse getFeedList(@AuthenticationPrincipal Long userId, @RequestParam(required = false) String cursor) {
         return feedService.getFeedList(userId, cursor);
+    }
+
+    /// 이번 주 큐레이션 세트. 게스트도 볼 수 있어야 하므로 userId가 null이어도 동작한다.
+    @GetMapping("/curation")
+    public CurationResponse getCurationFeed(@AuthenticationPrincipal Long userId) {
+        return feedService.getCurationFeed(userId);
     }
 
     @GetMapping("/search")

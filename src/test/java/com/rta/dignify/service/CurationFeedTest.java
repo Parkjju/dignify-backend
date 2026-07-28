@@ -1,7 +1,7 @@
 package com.rta.dignify.service;
 
 import com.rta.dignify.domain.*;
-import com.rta.dignify.dto.feed.FeedCursor;
+import com.rta.dignify.dto.feed.CurationResponse;
 import com.rta.dignify.dto.feed.FeedItem;
 import com.rta.dignify.dto.feed.FeedResponse;
 import com.rta.dignify.global.config.JpaAuditingConfig;
@@ -21,7 +21,12 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 큐레이션(curation_tracks) 우선 노출이 피드 정렬에 반영되는지 검증.
+ * 큐레이션(curation_tracks) 동작 검증.
+ *
+ * 예전엔 큐레이션 곡을 일반 피드 ORDER BY로 최상단에 끌어올렸다. 지금은 /feed/curation
+ * 세트가 그 역할을 하고, 일반 피드에서는 아예 빠진다 — 세트에서 한 번 본 곡을 피드 첫 장에서
+ * 또 만나면 세트가 새 곡을 준다는 전제가 깨지기 때문이다.
+ *
  * 큐레이션 행은 프로덕션과 동일하게 native INSERT로 시딩한다(엔티티 팩토리 없음).
  */
 @DataJpaTest
@@ -87,57 +92,99 @@ public class CurationFeedTest {
                 .setParameter("active", active)
                 .executeUpdate();
         entityManager.flush();
+        entityManager.clear();
+    }
+
+    /** 커서를 끝까지 따라가며 일반 피드가 실제로 내주는 트랙 전부를 모은다. */
+    private List<Long> drainFeed() {
+        List<Long> drained = new ArrayList<>();
+        String cursor = null;
+        FeedResponse resp;
+        do {
+            resp = feedService.getFeedList(user.getId(), cursor);
+            resp.items().forEach(item -> drained.add(item.trackId()));
+            cursor = resp.nextCursor();
+        } while (resp.hasMore());
+        return drained;
     }
 
     @Test
-    @DisplayName("큐레이션된 장르 트랙이 GENRE 단계 최상단으로 온다")
-    void curatedGenreTrackIsBoostedToTop() {
+    @DisplayName("세트는 선호 장르를 타지 않고 priority 순으로 나온다")
+    void curationSetIgnoresGenreAndOrdersByPriority() {
         entityManager.persistAndFlush(UserGenre.create(user, rockGenre));
-        Track boosted = rockTracks.get(10);   // 원래 11번째(track_id 순)
-        curate(boosted, 100, true);
+        // 선호 장르가 아닌 컨트리 곡 — 장르 필터를 타면 세트에서 빠질 곡이다.
+        Track offGenre = countryTracks.get(0);
+        Track inGenre = rockTracks.get(0);
+        curate(offGenre, 100, true);
+        curate(inGenre, 10, true);
 
-        FeedResponse res = feedService.getFeedList(user.getId(), null);
+        CurationResponse set = feedService.getCurationFeed(user.getId());
 
-        // 1등 = 큐레이션 트랙(priority로 결정적), 나머지 9개는 seed 셔플이므로 rock 집합만 검증
-        List<Long> otherRockIds = rockTracks.stream()
-                .map(Track::getId)
-                .filter(id -> !id.equals(boosted.getId()))
-                .toList();
-
-        assertThat(res.items()).hasSize(10);
-        assertThat(res.items().get(0).trackId()).isEqualTo(boosted.getId());
-        assertThat(res.items().subList(1, 10)).extracting(FeedItem::trackId).isSubsetOf(otherRockIds);
+        assertThat(set.items()).extracting(FeedItem::trackId)
+                .containsExactly(offGenre.getId(), inGenre.getId());
     }
 
     @Test
-    @DisplayName("선호 장르가 없어도 큐레이션 트랙이 GENERAL 단계 최상단으로 온다")
-    void curatedTrackIsBoostedInGeneralPhase() {
+    @DisplayName("활성 큐레이션 곡은 GENRE 단계 일반 피드에서 빠진다")
+    void curatedTrackIsExcludedFromGenrePhase() {
+        entityManager.persistAndFlush(UserGenre.create(user, rockGenre));
+        Track curated = rockTracks.get(10);
+        curate(curated, 100, true);
+
+        assertThat(drainFeed()).doesNotContain(curated.getId());
+    }
+
+    @Test
+    @DisplayName("선호 장르가 없어도 큐레이션 곡은 GENERAL 단계에서 빠진다")
+    void curatedTrackIsExcludedFromGeneralPhase() {
         // user에 선호 장르 없음 → 모든 트랙이 general 풀
-        Track boosted = countryTracks.get(7);
-        curate(boosted, 100, true);
+        Track curated = countryTracks.get(7);
+        curate(curated, 100, true);
 
-        FeedResponse res = feedService.getFeedList(user.getId(), null);
-
-        assertThat(res.items().get(0).trackId()).isEqualTo(boosted.getId());
-        FeedCursor cursor = FeedCursor.decode(res.nextCursor());
-        assertThat(cursor.phase()).isEqualTo(FeedCursor.Phase.GENERAL);
+        assertThat(drainFeed()).doesNotContain(curated.getId());
     }
 
     @Test
-    @DisplayName("is_active=false 큐레이션은 우선 노출되지 않는다")
-    void inactiveCurationIsNotBoosted() {
+    @DisplayName("is_active=false 큐레이션은 세트에도 없고 일반 피드에서 빠지지도 않는다")
+    void inactiveCurationIsIgnoredOnBothSides() {
         entityManager.persistAndFlush(UserGenre.create(user, rockGenre));
         Track inactive = rockTracks.get(10);
         curate(inactive, 100, false);   // 높은 우선순위지만 비활성
 
-        // 낮은 우선순위의 활성 대조 트랙: 비활성 큐레이션이 무시되면 이 트랙이 최상단이어야 함
-        Track control = rockTracks.get(0);
-        curate(control, 10, true);
+        assertThat(feedService.getCurationFeed(user.getId()).items()).isEmpty();
+        // 지난 주 세트가 피드에서 영구히 사라지면 안 된다 — 교체되면 일반 풀로 돌아와야 한다.
+        assertThat(drainFeed()).contains(inactive.getId());
+    }
 
-        FeedResponse res = feedService.getFeedList(user.getId(), null);
+    @Test
+    @DisplayName("setKey는 세트 구성이 그대로면 같고 곡이 바뀌면 달라진다")
+    void setKeyChangesOnlyWithComposition() {
+        Track a = rockTracks.get(0);
+        Track b = countryTracks.get(0);
+        curate(a, 20, true);
+        curate(b, 10, true);
 
-        // inactive(100)가 무시되므로 활성 control(10)이 최상단 (셔플 무관, priority로 결정적)
-        assertThat(res.items().get(0).trackId()).isEqualTo(control.getId());
-        assertThat(res.items()).hasSize(10);
+        String before = feedService.getCurationFeed(user.getId()).setKey();
+        assertThat(feedService.getCurationFeed(user.getId()).setKey()).isEqualTo(before);
+
+        entityManager.getEntityManager()
+                .createNativeQuery("UPDATE curation_tracks SET is_active = false WHERE track_id = :id")
+                .setParameter("id", b.getId()).executeUpdate();
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(feedService.getCurationFeed(user.getId()).setKey()).isNotEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("하입한 곡이 세트에 있으면 isHyped=true로 나온다")
+    void curationSetCarriesHypeState() {
+        Track curated = rockTracks.get(0);
+        curate(curated, 10, true);
+        entityManager.persistAndFlush(UserHypeTrack.create(user, curated));
+
+        assertThat(feedService.getCurationFeed(user.getId()).items())
+                .singleElement()
+                .extracting(FeedItem::isHyped).isEqualTo(true);
     }
 }

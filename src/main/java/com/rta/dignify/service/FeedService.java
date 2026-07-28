@@ -1,9 +1,12 @@
 package com.rta.dignify.service;
 
+import com.rta.dignify.domain.CurationTrack;
 import com.rta.dignify.domain.Track;
+import com.rta.dignify.dto.feed.CurationResponse;
 import com.rta.dignify.dto.feed.FeedCursor;
 import com.rta.dignify.dto.feed.FeedItem;
 import com.rta.dignify.dto.feed.FeedResponse;
+import com.rta.dignify.repository.CurationTrackRepository;
 import com.rta.dignify.repository.TrackRepository;
 import com.rta.dignify.repository.UserHypeTrackRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +24,7 @@ public class FeedService {
 
     private final TrackRepository trackRepository;
     private final UserHypeTrackRepository userHypeTrackRepository;
+    private final CurationTrackRepository curationTrackRepository;
 
     @Transactional
     public FeedResponse getFeedList(Long userId, String cursorString) {
@@ -57,6 +61,23 @@ public class FeedService {
             }
         }
         return response;
+    }
+
+    /// 이번 주 큐레이션 세트. 전 유저 동일 내용이고 개인화도 페이징도 없다.
+    /// 하입 여부만 유저별로 채워, 이미 담은 곡이 안 담긴 것처럼 보이지 않게 한다.
+    @Transactional(readOnly = true)
+    public CurationResponse getCurationFeed(Long userId) {
+        List<Track> tracks = curationTrackRepository.findActiveOrdered().stream()
+                .map(CurationTrack::getTrack).toList();
+        List<FeedItem> items = tracks.stream()
+                .map(track -> FeedItem.from(track, isHyped(userId, track)))
+                .toList();
+        return CurationResponse.of(tracks.stream().map(Track::getId).toList(), items);
+    }
+
+    /// 게스트(userId=null)는 하입 자체가 불가능하므로 조회하지 않는다.
+    private boolean isHyped(Long userId, Track track) {
+        return userId != null && userHypeTrackRepository.existsByUser_IdAndTrack_Id(userId, track.getId());
     }
 
     @Transactional(readOnly = true)
