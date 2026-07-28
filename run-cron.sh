@@ -17,6 +17,8 @@ Usage:
   ./run-cron.sh cancel-artist 9 11              해당 요청을 거절 처리 (푸시 안 나감)
   ./run-cron.sh push "제목" "본문"               전체 유저에게 공지 푸시 (확인 후 발송)
   ./run-cron.sh push-users                      기기 토큰이 등록된 유저 목록 (TO에 넣을 userId)
+  ./run-cron.sh curate                          지금 나가고 있는 큐레이션 세트 보기
+  ./run-cron.sh curate 12 34 56                 트랙 id를 세트에 넣기 (적은 순서대로 노출)
   ./run-cron.sh -h | --help                     이 도움말
 
 Examples:
@@ -30,6 +32,8 @@ Examples:
   TO=3 ./run-cron.sh push "제목" "본문"          # userId=3 기기에만 (테스트 발송)
   FORCE=true ./run-cron.sh push "제목" "본문"    # 새벽인 유저까지 전부
   MIN_BUILD=12 ./run-cron.sh push "제목" "본문"  # 빌드 12(1.0.6) 이상 기기에만
+  ./run-cron.sh curate 8123 4471 9902
+  REPLACE=true ./run-cron.sh curate 8123 4471    # 이번 주 세트로 통째 교체 (나머지는 끔)
 
 거절 사유는 요청한 유저의 앱 화면에 그대로 보인다. REASON 없이 부르면 기본 문구가 들어간다.
 push 문구는 보낸 그대로 알림에 뜬다(번역 없음). 기기 로컬 09~22시인 유저에게만 나가고,
@@ -40,6 +44,10 @@ TO를 주면 그 유저 기기에만, 시간대 상관없이, 확인 없이 바�
 MIN_BUILD는 앱 빌드 번호(CFBundleVersion) 기준이다. 구버전에 없는 화면을 안내할 때 쓴다 —
 받아도 눌러보면 그 화면이 없어서다. 빌드가 아직 안 잡힌 기기(앱을 한 번도 안 켠 유저)는 빠진다.
 빌드별 기기 수는 push-users에 나온다.
+
+curate는 세트에 곡 수가 몇이든 다 내보낸다. 상한이 없으니 한 번에 몇 곡만 넣을 것.
+이미 들어있던 곡을 다시 넣으면 순서만 바뀌고, 껐던 곡을 넣으면 다시 켜진다.
+REPLACE 없이 부르면 지난주 세트가 그대로 남아 같이 나간다.
 EOF
 }
 
@@ -110,8 +118,18 @@ case "$JOB" in
         fi
         ;;
     push-users) ;;
+    curate)
+        shift
+        TRACK_IDS=("$@")
+        for id in "${TRACK_IDS[@]}"; do
+            if ! [[ "$id" =~ ^[0-9]+$ ]]; then
+                echo "트랙 id는 숫자여야 합니다: '$id'"
+                exit 1
+            fi
+        done
+        ;;
     *)
-        echo "Unknown job: $JOB (collect | collect-artist | collect-artist-id | enrich-ko | resolve-artist | cancel-artist | push | push-users)"
+        echo "Unknown job: $JOB (collect | collect-artist | collect-artist-id | enrich-ko | resolve-artist | cancel-artist | push | push-users | curate)"
         exit 1
         ;;
 esac
@@ -121,6 +139,15 @@ set -a && source .env && set +a
 PROXY_PORT=5433
 APP_PORT=8080
 LOG_FILE="/tmp/dignify-bootrun.log"
+
+# y로 시작하면 예. 정확히 "y" 한 글자만 받으면 안 된다 — 대문자 Y, "yes", 그리고 한글 자판을
+# 켜둔 채 친 스페이스(non-breaking space, c2a0)가 전부 터미널에선 똑같이 "y "로 보이면서
+# 조용히 취소로 떨어진다. 방금 한글로 문구를 친 직후에 누르는 자리라 실제로 걸린다.
+confirm() {
+    local answer
+    read -r -p "$1 (y/N) " answer
+    [[ "$answer" =~ ^[Yy] ]]
+}
 
 # 푸시는 APNs 키가 있는 라이브 서버에서만 나간다. 로컬 bootRun은 키가 없어 PushService 빈이 아예 안 뜨고,
 # 그러면 상태만 바뀌고 알림은 조용히 안 감. 그래서 수집은 로컬, 상태 변경은 라이브로 나눠 쏜다.
@@ -138,8 +165,7 @@ if [ "$JOB" = "push" ]; then
         echo "대상: userId=$TO (이 유저 기기에만, 시간대 무시)"
     else
         [ "$FORCE" = "true" ] && echo "(FORCE=true — 로컬 새벽인 유저에게도 나갑니다)"
-        read -r -p "전체 유저에게 발송할까요? (y/N) " CONFIRM
-        if [ "$CONFIRM" != "y" ]; then
+        if ! confirm "전체 유저에게 발송할까요?"; then
             echo "[cron] 취소했습니다."
             exit 0
         fi
@@ -229,6 +255,62 @@ if [ "$JOB" = "push-users" ]; then
                      FROM user_device_tokens GROUP BY app_build ORDER BY app_build DESC NULLS LAST"
     echo "[cron] 본인 기기로만 쏘려면: TO=<user_id> ./run-cron.sh push \"제목\" \"본문\""
     echo "[cron] 특정 빌드 이상만: MIN_BUILD=12 ./run-cron.sh push \"제목\" \"본문\"   # 12=1.0.6"
+    exit 0
+fi
+
+# 큐레이션 세트 편집. 손으로 고른 id를 넣는 일이라 앱도 API도 필요 없어 bootRun 전에 끝낸다.
+if [ "$JOB" = "curate" ]; then
+    show_set() {
+        "${PSQL[@]}" -c "SELECT c.priority, t.track_id, t.artist_name, t.track_name
+                         FROM curation_tracks c JOIN tracks t ON t.track_id = c.track_id
+                         WHERE c.is_active ORDER BY c.priority DESC, c.curation_track_id"
+    }
+
+    if [ ${#TRACK_IDS[@]} -eq 0 ]; then
+        show_set
+        echo "[cron] 넣으려면: ./run-cron.sh curate <trackId> [<trackId> ...]  (적은 순서대로 노출)"
+        exit 0
+    fi
+
+    IDS_CSV=$(IFS=,; echo "${TRACK_IDS[*]}")
+
+    # 넣기 전에 뭘 넣는지 보여준다. id를 손으로 옮겨적는 이상 한 자리 틀리면 엉뚱한 곡이 대문에 걸린다.
+    # 없는 id는 아래 INSERT가 FK로 막지만, 막히는 것보다 미리 보이는 편이 고치기 쉽다.
+    "${PSQL[@]}" -c "SELECT v.id, t.artist_name, t.track_name,
+                            CASE WHEN t.track_id IS NULL THEN '없는 id'
+                                 WHEN NOT t.is_active THEN '비활성 트랙'
+                                 ELSE 'ok' END AS state
+                     FROM unnest(ARRAY[$IDS_CSV]) WITH ORDINALITY AS v(id, ord)
+                     LEFT JOIN tracks t ON t.track_id = v.id ORDER BY v.ord"
+
+    [ "$REPLACE" = "true" ] && echo "(REPLACE=true — 지금 세트에 있는 나머지 곡은 전부 꺼집니다)"
+    if ! confirm "이 순서로 세트에 넣을까요?"; then
+        echo "[cron] 취소했습니다."
+        exit 0
+    fi
+
+    # 적은 순서대로 앞에 나오게 priority를 역순으로 매긴다 (세트는 priority DESC 정렬).
+    VALUES=""
+    for i in "${!TRACK_IDS[@]}"; do
+        VALUES+="(${TRACK_IDS[$i]},$(( ${#TRACK_IDS[@]} - i ))),"
+    done
+
+    # 끄기와 넣기가 한 -c 안에 있어야 한 트랜잭션으로 돈다 — 중간에 끊겨 빈 세트가 나가면 안 된다.
+    SQL=""
+    [ "$REPLACE" = "true" ] && SQL+="UPDATE curation_tracks SET is_active = FALSE, updated_at = NOW()
+                                     WHERE is_active AND track_id <> ALL(ARRAY[$IDS_CSV]);"
+    SQL+="INSERT INTO curation_tracks (track_id, priority, is_active, created_at, updated_at)
+          SELECT v.id, v.prio, TRUE, NOW(), NOW() FROM (VALUES ${VALUES%,}) AS v(id, prio)
+          ON CONFLICT (track_id) DO UPDATE
+            SET priority = EXCLUDED.priority, is_active = TRUE, updated_at = NOW();"
+
+    if ! "${PSQL[@]}" -v ON_ERROR_STOP=1 -q -c "$SQL"; then
+        echo "[cron] 실패했습니다. 세트는 그대로입니다."
+        exit 1
+    fi
+
+    echo "[cron] 지금 나가는 세트:"
+    show_set
     exit 0
 fi
 
