@@ -13,10 +13,12 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.i18n.LocaleContextHolder;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -241,5 +243,26 @@ public class FeedServiceTest {
         // 매칭 30개가 중복·누락 없이 정확히 한 번씩 소진돼야 한다
         assertThat(drained).containsExactlyInAnyOrderElementsOf(
                 testRockTracks.stream().map(Track::getId).toList());
+    }
+
+    @Test
+    @DisplayName("""
+            1. genreName은 로케일을 따라가고 genreNameEn은 따라가지 않는다
+            """)
+    void genreNameEnIsLocaleStableTest() {
+        UserGenre userGenre = UserGenre.create(user, rockGenre);
+        entityManager.persistAndFlush(userGenre);
+
+        LocaleContextHolder.setLocale(Locale.KOREAN);
+        FeedItem ko = feedService.getFeedList(user.getId(), null).items().get(0);
+        LocaleContextHolder.setLocale(Locale.ENGLISH);
+        FeedItem en = feedService.getFeedList(user.getId(), null).items().get(0);
+        LocaleContextHolder.resetLocaleContext();
+
+        assertThat(ko.genreName()).isEqualTo("락");
+        assertThat(en.genreName()).isEqualTo("Rock");
+        // 분석 키는 로케일이 바뀌어도 한 값이어야 한다 — 이게 깨지면 장르별 집계가 둘로 쪼개진다
+        assertThat(ko.genreNameEn()).isEqualTo("Rock");
+        assertThat(en.genreNameEn()).isEqualTo("Rock");
     }
 }
