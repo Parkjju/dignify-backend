@@ -30,31 +30,44 @@ public class DeviceTokenServiceTest {
     @Test
     @DisplayName("신규 토큰 등록 — row가 생성된다")
     void registerNewToken() {
-        deviceTokenService.register(user.getId(), "token-abc", "sandbox");
+        deviceTokenService.register(user.getId(), "token-abc", "sandbox", "Asia/Seoul");
 
         assertThat(userDeviceTokenRepository.findAll()).hasSize(1);
         UserDeviceToken saved = userDeviceTokenRepository.findByToken("token-abc").orElseThrow();
         assertThat(saved.getUser().getId()).isEqualTo(user.getId());
         assertThat(saved.getEnvironment()).isEqualTo("sandbox");
+        assertThat(saved.getTimeZone()).isEqualTo("Asia/Seoul");
     }
 
     @Test
     @DisplayName("같은 토큰 재등록 — 중복 없이 environment만 갱신된다")
     void reRegisterUpdatesInPlace() {
-        deviceTokenService.register(user.getId(), "token-abc", "sandbox");
-        deviceTokenService.register(user.getId(), "token-abc", "production");
+        deviceTokenService.register(user.getId(), "token-abc", "sandbox", "Asia/Seoul");
+        deviceTokenService.register(user.getId(), "token-abc", "production", "America/Phoenix");
 
         assertThat(userDeviceTokenRepository.findAll()).hasSize(1);   // 새 row 안 생김
         assertThat(userDeviceTokenRepository.findByToken("token-abc").orElseThrow().getEnvironment())
                 .isEqualTo("production");
+        assertThat(userDeviceTokenRepository.findByToken("token-abc").orElseThrow().getTimeZone())
+                .isEqualTo("America/Phoenix");
+    }
+
+    @Test
+    @DisplayName("구버전 앱이 타임존 없이 재등록 — 기존 타임존을 지우지 않는다")
+    void reRegisterWithoutTimeZoneKeepsIt() {
+        deviceTokenService.register(user.getId(), "token-abc", "sandbox", "Asia/Seoul");
+        deviceTokenService.register(user.getId(), "token-abc", "production", null);
+
+        assertThat(userDeviceTokenRepository.findByToken("token-abc").orElseThrow().getTimeZone())
+                .isEqualTo("Asia/Seoul");
     }
 
     @Test
     @DisplayName("같은 토큰이 다른 유저로 등록 — 소유자가 이전된다(토큰 unique)")
     void reassignToAnotherUser() {
         User other = userRepository.save(User.create("other@gmail.com", "other"));
-        deviceTokenService.register(user.getId(), "token-abc", "sandbox");
-        deviceTokenService.register(other.getId(), "token-abc", "sandbox");
+        deviceTokenService.register(user.getId(), "token-abc", "sandbox", "Asia/Seoul");
+        deviceTokenService.register(other.getId(), "token-abc", "sandbox", "Asia/Seoul");
 
         assertThat(userDeviceTokenRepository.findAll()).hasSize(1);
         assertThat(userDeviceTokenRepository.findByToken("token-abc").orElseThrow().getUser().getId())

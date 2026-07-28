@@ -15,11 +15,11 @@ public class DeviceTokenService {
     private final UserRepository userRepository;
 
     @Transactional
-    public void register(Long userId, String token, String environment) {
+    public void register(Long userId, String token, String environment, String timeZone) {
         User user = userRepository.getReferenceById(userId);
         userDeviceTokenRepository.findByToken(token).ifPresentOrElse(
-                existing -> existing.reassign(user, environment),
-                () -> userDeviceTokenRepository.save(UserDeviceToken.create(user, token, environment))
+                existing -> existing.reassign(user, environment, timeZone),
+                () -> userDeviceTokenRepository.save(UserDeviceToken.create(user, token, environment, timeZone))
         );
     }
 }
