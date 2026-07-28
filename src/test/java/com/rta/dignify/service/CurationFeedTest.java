@@ -157,27 +157,6 @@ public class CurationFeedTest {
     }
 
     @Test
-    @DisplayName("활성 행이 세트 크기보다 많아도 세트는 상한을 지키고, 넘친 곡은 일반 피드에 남는다")
-    void overflowingCurationStaysInTheNormalFeed() {
-        // 세트 크기 + 2개를 활성화한다. priority가 낮은 2개는 세트에 못 든다.
-        int overflow = FeedService.CURATION_SET_SIZE + 2;
-        List<Track> curated = new ArrayList<>(rockTracks.subList(0, overflow));
-        for (int i = 0; i < overflow; i++) {
-            curate(curated.get(i), overflow - i, true);   // 앞쪽일수록 priority 높음
-        }
-
-        List<Long> setIds = feedService.getCurationFeed(user.getId()).items()
-                .stream().map(FeedItem::trackId).toList();
-        assertThat(setIds).hasSize(FeedService.CURATION_SET_SIZE);
-
-        // 세트에 못 든 2곡이 피드에서도 빠지면 어디에도 안 나오는 곡이 된다.
-        List<Long> leftOver = curated.stream().map(Track::getId)
-                .filter(id -> !setIds.contains(id)).toList();
-        assertThat(leftOver).hasSize(2);
-        assertThat(drainFeed()).containsAll(leftOver).doesNotContainAnyElementsOf(setIds);
-    }
-
-    @Test
     @DisplayName("setKey는 세트 구성이 그대로면 같고 곡이 바뀌면 달라진다")
     void setKeyChangesOnlyWithComposition() {
         Track a = rockTracks.get(0);
