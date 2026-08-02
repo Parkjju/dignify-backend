@@ -1,6 +1,7 @@
 package com.rta.dignify.service;
 
 import com.eatthepath.pushy.apns.ApnsClient;
+import com.eatthepath.pushy.apns.util.ApnsPayloadBuilder;
 import com.eatthepath.pushy.apns.util.SimpleApnsPayloadBuilder;
 import com.eatthepath.pushy.apns.util.SimpleApnsPushNotification;
 import com.rta.dignify.domain.UserDeviceToken;
@@ -31,16 +32,27 @@ public class PushService {
     @Value("${apns.bundle-id}") String bundleId;
 
     /// 요청한 아티스트가 추가됐음을 알린다. 문구는 loc-key로 보내고 앱이 기기 언어로 렌더한다.
-    public void sendArtistAdded(Long userId, String artistName) {
-        String payload = new SimpleApnsPayloadBuilder()
-                .setLocalizedAlertTitle("push_artist_added_title", artistName)  // title-loc-key + args(%@=아티스트명)
-                .setLocalizedAlertMessage("push_artist_added_body")             // loc-key
-                .setSound(SimpleApnsPayloadBuilder.DEFAULT_SOUND_FILENAME)
-                .build();
+    ///
+    /// note를 주면 본문만 그 문구로 바뀐다("일부 앨범만 올라왔어요" 같은 안내). 번역은 안 되니
+    /// 보내는 사람이 유저 언어를 보고 써야 한다. 제목은 그대로 loc-key라 기기 언어로 나온다.
+    public void sendArtistAdded(Long userId, String artistName, String note) {
+        String payload = artistAddedPayload(artistName, note);
 
         for (UserDeviceToken t : tokenRepository.findByUserId(userId)) {
             send(t, payload);
         }
+    }
+
+    static String artistAddedPayload(String artistName, String note) {
+        ApnsPayloadBuilder builder = new SimpleApnsPayloadBuilder()
+                .setLocalizedAlertTitle("push_artist_added_title", artistName)  // title-loc-key + args(%@=아티스트명)
+                .setSound(SimpleApnsPayloadBuilder.DEFAULT_SOUND_FILENAME);
+        if (note == null || note.isBlank()) {
+            builder.setLocalizedAlertMessage("push_artist_added_body");         // loc-key
+        } else {
+            builder.setAlertBody(note);
+        }
+        return builder.build();
     }
 
     /// 운영자가 손으로 쏘는 공지 푸시(run-cron.sh push). 발송 대수를 돌려준다.

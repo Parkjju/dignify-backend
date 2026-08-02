@@ -28,6 +28,7 @@ Examples:
   ./run-cron.sh resolve-artist                  # 먼저 목록으로 id 확인
   ./run-cron.sh resolve-artist 3
   REASON="Not on Apple Music" ./run-cron.sh cancel-artist 9
+  REASON="일부 앨범만 올라왔어요" ./run-cron.sh resolve-artist 3   # 이 문구가 푸시 본문으로 나간다
   ./run-cron.sh push "새 큐레이션" "이번 주 세트가 올라왔어요"
   TO=3 ./run-cron.sh push "제목" "본문"          # userId=3 기기에만 (테스트 발송)
   FORCE=true ./run-cron.sh push "제목" "본문"    # 새벽인 유저까지 전부
@@ -36,6 +37,8 @@ Examples:
   REPLACE=true ./run-cron.sh curate 8123 4471    # 이번 주 세트로 통째 교체 (나머지는 끔)
 
 거절 사유는 요청한 유저의 앱 화면에 그대로 보인다. REASON 없이 부르면 기본 문구가 들어간다.
+resolve-artist에 REASON을 주면 그 문구가 추가 완료 푸시의 본문으로 나간다. 화면에는 안 보인다.
+번역이 안 되니 받는 유저 언어에 맞춰 쓸 것 — 안 주면 기존대로 앱이 기기 언어로 문구를 만든다.
 push 문구는 보낸 그대로 알림에 뜬다(번역 없음). 기기 로컬 09~22시인 유저에게만 나가고,
 그 밖은 건너뛴다 — 시간 무시하고 보내려면 FORCE=true.
 TO를 주면 그 유저 기기에만, 시간대 상관없이, 확인 없이 바로 나간다. 전체 발송 전 본인 기기로
@@ -328,7 +331,8 @@ fi
 if [ "$JOB" = "resolve-artist" ] || [ "$JOB" = "cancel-artist" ]; then
     if [ "$JOB" = "resolve-artist" ]; then
         NEW_STATUS="ADDED"
-        REQ_BODY='{"status":"ADDED"}'
+        # REASON을 주면 서버가 그 문구를 추가 완료 푸시의 본문으로 쓴다. 없으면 앱 기본 문구.
+        REQ_BODY=$(jq -nc --arg r "${REASON:-}" 'if $r == "" then {status:"ADDED"} else {status:"ADDED",cancelReason:$r} end')
     else
         REASON="${REASON:-Not available on Apple Music}"
         NEW_STATUS="CANCELED"
@@ -362,7 +366,7 @@ if [ "$JOB" = "resolve-artist" ] || [ "$JOB" = "cancel-artist" ]; then
         if [ "$CODE" != "200" ]; then
             echo "[cron] #$id '$ARTIST' → $NEW_STATUS 처리 실패($CODE)"
         elif [ "$NEW_STATUS" = "ADDED" ]; then
-            echo "[cron] #$id '$ARTIST' → ADDED 처리 완료, 요청한 유저에게 푸시 발송"
+            echo "[cron] #$id '$ARTIST' → ADDED 처리 완료, 요청한 유저에게 푸시 발송${REASON:+ (사유: $REASON)}"
         else
             echo "[cron] #$id '$ARTIST' → 거절 처리 완료 (사유: $REASON)"
         fi

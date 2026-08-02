@@ -42,6 +42,26 @@ class PushServiceTest {
     }
 
     @Test
+    @DisplayName("아티스트 추가 푸시 — 문구를 안 주면 본문은 loc-key로 나간다")
+    void artistAddedUsesLocKeyByDefault() {
+        for (String note : new String[]{null, "", "  "}) {
+            String payload = PushService.artistAddedPayload("Radiohead", note);
+            assertThat(payload).contains("push_artist_added_body");
+            assertThat(payload).contains("push_artist_added_title", "Radiohead");
+        }
+    }
+
+    @Test
+    @DisplayName("아티스트 추가 푸시 — 문구를 주면 본문만 그 문구로 바뀐다")
+    void artistAddedUsesNoteAsBody() {
+        String payload = PushService.artistAddedPayload("Radiohead", "일부 앨범만 올라왔어요");
+
+        assertThat(payload).contains("일부 앨범만 올라왔어요");
+        assertThat(payload).doesNotContain("push_artist_added_body");
+        assertThat(payload).contains("push_artist_added_title");   // 제목은 그대로 기기 언어
+    }
+
+    @Test
     @DisplayName("타임존이 없거나 이상하면 UTC로 친다 — 발송이 죽지 않는다")
     void fallsBackToUtc() {
         // 04:00Z는 UTC 기준 새벽이라 건너뛰는 쪽

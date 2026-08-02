@@ -50,8 +50,10 @@ public class ArtistRequestService {
         ArtistRequest req = repository.findById(id).orElseThrow(() -> new BusinessException(ErrorCode.ARTIST_REQUEST_NOT_FOUND));
         req.resolve(status, cancelReason);
 
+        // ADDED일 때 cancelReason은 거절 사유가 아니라 푸시 본문으로 나간다. 앱은 ADDED 행의
+        // 이 값을 화면에 안 쓰므로, 운영자가 한마디 덧붙일 통로로 그대로 쓴다.
         if (status == RequestStatus.ADDED) {
-            pushService.ifAvailable(p -> p.sendArtistAdded(req.getUser().getId(), req.getArtistName()));
+            pushService.ifAvailable(p -> p.sendArtistAdded(req.getUser().getId(), req.getArtistName(), cancelReason));
         }
     }
 }
