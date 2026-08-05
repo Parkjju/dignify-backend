@@ -24,6 +24,17 @@ public class GlobalExceptionHandlerTest {
         RequestBuilder requestBuilder = MockMvcRequestBuilders.get("/test/business-exception");
         mockMvc.perform(requestBuilder)
                 .andExpect(MockMvcResultMatchers.status().isNotFound())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.message").value("유저를 찾지 못했습니다."))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.code").value("USER_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("BusinessException + detail -> 404")
+    void customErrorMessageTest() throws Exception {
+        RequestBuilder requestBuilder = MockMvcRequestBuilders.get("/test/business-exception-detail");
+        mockMvc.perform(requestBuilder)
+                .andExpect(MockMvcResultMatchers.status().isNotFound())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.message").value("직접 넘긴 문구"))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.code").value("USER_NOT_FOUND"));
     }
 
@@ -64,5 +75,4 @@ public class GlobalExceptionHandlerTest {
                 .andExpect(MockMvcResultMatchers.status().isInternalServerError())
                 .andExpect(MockMvcResultMatchers.jsonPath("$.code").value("INTERNAL_SERVER_ERROR"));
     }
-
 }

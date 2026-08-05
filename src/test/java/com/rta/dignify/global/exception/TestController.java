@@ -17,6 +17,11 @@ public class TestController {
         throw new BusinessException(ErrorCode.USER_NOT_FOUND);
     }
 
+    @GetMapping("/test/business-exception-detail")
+    void throwBusinessExceptionWithDetail() {
+        throw new BusinessException(ErrorCode.USER_NOT_FOUND, "직접 넘긴 문구");
+    }
+
     @GetMapping("/test/data-integrity")
     void throwDataIntegrity() {
         // 핸들러는 SQLState 23505(unique 위반) cause가 있을 때만 409로 매핑한다
