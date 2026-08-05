@@ -17,6 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Stream;
 
 @RequiredArgsConstructor
 @Slf4j
@@ -54,13 +56,27 @@ public class CronBatchService {
             return 0;
         }
         Set<Long> seenTrackIds = new HashSet<>();
+        // 매핑에 없어 버린 장르명. 배치당 한 줄로 모아 찍는다 — 아이템마다 찍으면 200줄이 된다.
+        Set<String> unmappedGenres = new TreeSet<>();
         List<Track> tracks = itunesItemList.stream()
                 .filter(itunesItem -> seenTrackIds.add(itunesItem.trackId()))
                 .filter(itunesItem -> !trackRepository.existsByExternalIdAndSource(String.valueOf(itunesItem.trackId()), "ITUNES"))
-                .flatMap(item -> genreRepository.findByGenreNameEn(item.primaryGenreName())
-                        .flatMap(genre -> Track.from(item, genre))
-                        .stream())
+                .flatMap(item -> {
+                    // iTunes 원본 장르로 조회하면 시드된 리프(Singer/Songwriter 등)에 그대로 꽂힌다. GenreMapping 참고.
+                    String genreName = GenreMapping.canonical(item.primaryGenreName());
+                    if (genreName == null) {
+                        unmappedGenres.add(item.primaryGenreName());
+                        return Stream.<Track>empty();
+                    }
+                    return genreRepository.findByGenreNameEn(genreName)
+                            .flatMap(genre -> Track.from(item, genre))
+                            .stream();
+                })
                 .toList();
+
+        if (!unmappedGenres.isEmpty()) {
+            log.warn("Unmapped genres — 해당 트랙 드롭됨. 남길 장르면 GenreMapping.ALIASES에 추가: {}", unmappedGenres);
+        }
 
         tracks.forEach(track -> {
             try {
