@@ -35,4 +35,18 @@ public class Pick extends BaseTimeEntity {
 
     @Column(name = "max_notified_reactions", nullable = false)
     private Integer maxNotifiedReactions = 0;
+
+    private Pick(User user, String title, Boolean isOfficial) {
+        this.user = user;
+        this.title = title;
+        this.isOfficial = isOfficial;
+    }
+
+    public static Pick create(User user, String title, Boolean isOfficial) {
+        return new Pick(user, title, isOfficial);
+    }
+
+    public void delete() {
+        this.isDeleted = true;
+    }
 }
