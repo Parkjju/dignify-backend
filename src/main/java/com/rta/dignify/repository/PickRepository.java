@@ -15,8 +15,8 @@ public interface PickRepository extends JpaRepository<Pick, Long> {
     @Query(value = "SELECT p FROM Pick p " +
             "JOIN FETCH p.user " +
             "WHERE p.isDeleted = FALSE " +
-            "AND (:curOfficial IS NULL OR (p.isOfficial = :curOfficial AND p.id < :curPickId) OR (:curOfficial = FALSE AND p.isOfficial = TRUE)) " +
+            "AND (:curOfficial IS NULL OR (p.isOfficial = :curOfficial AND p.id < :curPickId) OR (:curOfficial = FALSE AND p.isOfficial = TRUE)) AND (:ownerId IS NULL OR p.user.id = :ownerId) " +
             "ORDER BY p.isOfficial ASC, p.id DESC"
     )
-    List<Pick> findPage(@Param("curOfficial") Boolean curOfficial, @Param("curPickId") Long curPickId, Pageable pageable);
+    List<Pick> findPage(@Param("curOfficial") Boolean curOfficial, @Param("curPickId") Long curPickId, @Param("ownerId") Long ownerId, Pageable pageable);
 }

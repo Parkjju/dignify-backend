@@ -34,6 +34,7 @@ public enum ErrorCode {
     AUTH_IDENTITY_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않은 identity 토큰입니다."),
     AUTH_IDENTITY_TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED, "만료된 identity 토큰입니다."),
     AUTH_IDENTITY_TOKEN_ALGORITHM_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않은 identity 토큰 알고리즘입니다."),
+    AUTH_REQUIRED(HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
 
     // Artist Request domain
     ARTIST_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "등록 요청이 존재하지 않습니다."),

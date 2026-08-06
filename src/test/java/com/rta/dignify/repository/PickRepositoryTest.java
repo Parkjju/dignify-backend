@@ -66,14 +66,14 @@ public class PickRepositoryTest {
         }
 
         // 1. delete된 데이터는 필터링하고 조회하는지
-        assertThat(pickRepository.findPage(null, null, PageRequest.of(0, 30))).hasSize(29);
+        assertThat(pickRepository.findPage(null, null, null, PageRequest.of(0, 30))).hasSize(29);
 
         // 2. 사용자 픽이 먼저 등장하는지
-        assertThat(pickRepository.findPage(null, null, PageRequest.of(0, 30))).extracting(Pick::getId).containsExactlyElementsOf(Stream.concat(Stream.concat(userPicks2.reversed().stream(), userPicks1.reversed().stream()), curatedPicks.reversed().stream()).map(Pick::getId).toList());
+        assertThat(pickRepository.findPage(null, null, null, PageRequest.of(0, 30))).extracting(Pick::getId).containsExactlyElementsOf(Stream.concat(Stream.concat(userPicks2.reversed().stream(), userPicks1.reversed().stream()), curatedPicks.reversed().stream()).map(Pick::getId).toList());
 
         // 3. 커서 경계 테스트
         Long lastUserPickId = userPicks1.getFirst().getId();   // 사용자 픽 중 가장 작은 id
-        List<Pick> next = pickRepository.findPage(false, lastUserPickId, PageRequest.of(0, 10));
+        List<Pick> next = pickRepository.findPage(false, lastUserPickId, null, PageRequest.of(0, 10));
         assertThat(next).extracting(Pick::getId)
                 .containsExactlyElementsOf(curatedPicks.reversed().stream().map(Pick::getId).toList());
     }
