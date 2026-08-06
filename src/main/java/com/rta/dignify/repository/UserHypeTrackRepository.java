@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 public interface UserHypeTrackRepository extends JpaRepository<UserHypeTrack, Long> {
     boolean existsByUser_IdAndTrack_Id(Long userId, Long trackId);
@@ -68,4 +69,11 @@ public interface UserHypeTrackRepository extends JpaRepository<UserHypeTrack, Lo
     LIMIT 5
     """)
     List<ArtistCount> countUserHypeTracksByArtist(@Param("userId") Long userId, @Param("since") Instant since, @Param("ko") boolean ko);
+
+    @Query(value = """
+    SELECT uht.track.id
+    FROM UserHypeTrack uht
+    WHERE uht.track.id IN :trackIds AND uht.user.id = :userId
+    """)
+    Set<Long> findHypedTrackIds(@Param("userId") Long userId, @Param("trackIds") List<Long> trackIds);
 }

@@ -3,13 +3,18 @@ package com.rta.dignify.service;
 import com.rta.dignify.domain.Pick;
 import com.rta.dignify.domain.PickReaction;
 import com.rta.dignify.domain.PickTrack;
+import com.rta.dignify.dto.feed.FeedItem;
+import com.rta.dignify.dto.feed.FeedResponse;
 import com.rta.dignify.dto.pick.PickCursor;
 import com.rta.dignify.dto.pick.PickListResponse;
 import com.rta.dignify.dto.pick.PickReactionCount;
 import com.rta.dignify.dto.pick.PickResponse;
+import com.rta.dignify.global.exception.BusinessException;
+import com.rta.dignify.global.exception.ErrorCode;
 import com.rta.dignify.repository.PickReactionRepository;
 import com.rta.dignify.repository.PickRepository;
 import com.rta.dignify.repository.PickTrackRepository;
+import com.rta.dignify.repository.UserHypeTrackRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -18,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
@@ -29,6 +35,7 @@ public class PickService {
     private final PickReactionRepository pickReactionRepository;
     private final PickTrackRepository pickTrackRepository;
     private final PickRepository pickRepository;
+    private final UserHypeTrackRepository userHypeTrackRepository;
 
     @Transactional(readOnly = true)
     public PickListResponse getPicks(Long userId, String cursorString, boolean mine) {
@@ -59,5 +66,27 @@ public class PickService {
         Pick last = pickList.getLast();
 
         return new PickListResponse(items, hasMore ? new PickCursor(last.getIsOfficial(), last.getId()).encode() : null, hasMore);
+    }
+
+    @Transactional(readOnly = true)
+    public FeedResponse getPickDetail(Long userId, Long pickId) {
+        Pick pick = pickRepository.findById(pickId).orElseThrow(() -> new BusinessException(ErrorCode.PICK_DOES_NOT_EXIST));
+        if (pick.getIsDeleted()) {
+            throw new BusinessException(ErrorCode.PICK_DOES_NOT_EXIST);
+        }
+
+        List<PickTrack> pickTracks = pickTrackRepository.findPickTracksByPickIds(List.of(pickId));
+        if (pickTracks.isEmpty()) {
+            throw new BusinessException(ErrorCode.PICK_DOES_NOT_EXIST);
+        }
+
+        List<Long> trackIdsInPick = pickTracks.stream().map(pt -> pt.getTrack().getId()).toList();
+        Set<Long> hypedTrackIdsInPick = userId == null ? Set.of() : userHypeTrackRepository.findHypedTrackIds(userId, trackIdsInPick);
+        List<FeedItem> feedItems = pickTracks
+                .stream()
+                .filter(pt -> pt.getTrack().getIsActive())
+                .map(pt -> FeedItem.from(pt.getTrack(), hypedTrackIdsInPick.contains(pt.getTrack().getId())))
+                .toList();
+        return new FeedResponse(feedItems, null, null, null);
     }
 }

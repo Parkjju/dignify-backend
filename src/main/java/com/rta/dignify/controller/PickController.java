@@ -24,9 +24,8 @@ public class PickController {
         return pickService.getPicks(userId, cursor, mine);
     }
 
-    @GetMapping("/{id}")
-    public FeedResponse getPickById(@AuthenticationPrincipal Long userId, @PathVariable Long id) {
-
-
+    @GetMapping("/{pickId}")
+    public FeedResponse getPickDetail(@AuthenticationPrincipal Long userId, @PathVariable Long pickId) {
+        return pickService.getPickDetail(userId, pickId);
     }
 }

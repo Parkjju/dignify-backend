@@ -9,7 +9,8 @@ import java.util.List;
 
 public interface PickTrackRepository extends JpaRepository<PickTrack, Long> {
     @Query(value = "SELECT pt FROM PickTrack pt " +
-            "JOIN FETCH pt.track " +
+            "JOIN FETCH pt.track t " +
+            "JOIN FETCH t.genre " +
             "WHERE pt.pick.id IN :pickIds " +
             "ORDER BY pt.pick.id, pt.position"
     )
