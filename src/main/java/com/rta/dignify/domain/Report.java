@@ -36,4 +36,15 @@ public class Report extends BaseTimeEntity {
 
     @Column(name = "detail", length = 200, updatable = false)
     private String detail;
+
+    private Report(Pick pick, User user, ReportReason reason, String detail) {
+        this.pick = pick;
+        this.user = user;
+        this.reason = reason;
+        this.detail = detail;
+    }
+
+    public static Report create(Pick pick, User user, ReportReason reason, String detail) {
+        return new Report(pick, user, reason, detail);
+    }
 }
