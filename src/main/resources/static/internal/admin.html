@@ -158,8 +158,11 @@ async function api(method, path, body) {
     body: body !== undefined ? JSON.stringify(body) : undefined
   });
   if (res.status === 401) { delete localStorage.cronSecret; throw new Error('시크릿이 틀렸다. 다시 입력할 것.'); }
-  if (!res.ok) throw new Error((await res.text()) || res.status);
-  return res.status === 204 ? null : res.json();
+  const text = await res.text();
+  if (!res.ok) throw new Error(text || res.status);
+  // resolve처럼 200에 본문이 비는 응답이 있다. 바로 json()을 부르면 파싱에서 터지는데,
+  // 서버 일은 이미 끝난 뒤라 실패한 줄 알고 다시 누르게 된다.
+  return text ? JSON.parse(text) : null;
 }
 const run = fn => fn().catch(e => toast('실패: ' + e.message));
 
