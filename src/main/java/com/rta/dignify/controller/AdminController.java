@@ -1,6 +1,7 @@
 package com.rta.dignify.controller;
 
 import com.rta.dignify.dto.admin.ArtistRequestItem;
+import com.rta.dignify.dto.admin.GenreStat;
 import com.rta.dignify.dto.admin.PushUserItem;
 import com.rta.dignify.dto.feed.FeedItem;
 import com.rta.dignify.dto.itunes.ItunesItem;
@@ -44,6 +45,12 @@ public class AdminController {
     public List<ItunesItem> searchItunesArtists(@RequestHeader("X-Cron-Secret") String secret, @RequestParam String q) {
         internalSecrets.verifyAdmin(secret);
         return adminService.searchItunesArtists(q);
+    }
+
+    @GetMapping("/genre-stats")
+    public List<GenreStat> getGenreStats(@RequestHeader("X-Cron-Secret") String secret) {
+        internalSecrets.verifyAdmin(secret);
+        return adminService.getGenreStats();
     }
 
     @GetMapping("/push/users")

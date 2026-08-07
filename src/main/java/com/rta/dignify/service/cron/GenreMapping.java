@@ -68,6 +68,12 @@ public final class GenreMapping {
             entry("TV Soundtrack", "Soundtrack")
     );
 
+    /// 노출 장르 이름 전부. 어드민 현황 화면이 곡 수 0인 장르까지 보여주려면 이 목록이 필요하다 —
+    /// genres 테이블에는 iTunes 리프 420종이 통째로 시드돼 있어 거기서 뽑으면 빈 리프가 쏟아진다.
+    public static Set<String> canonicalNames() {
+        return CANONICAL;
+    }
+
     // 13개 중 하나로 접은 이름. 매핑이 없으면 null — 호출부가 그 트랙을 버린다.
     // 폴백 통을 두지 않는 이유: 장르가 틀리게 붙으면 개인화가 조용히 나빠지는데, 드롭은 로그로 보인다.
     public static String canonical(String itunesGenreName) {

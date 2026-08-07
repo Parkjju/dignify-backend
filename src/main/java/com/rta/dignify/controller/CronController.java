@@ -1,6 +1,7 @@
 package com.rta.dignify.controller;
 
 import com.rta.dignify.global.security.InternalSecrets;
+import com.rta.dignify.service.cron.CronBatchService;
 import com.rta.dignify.service.cron.CronService;
 import com.rta.dignify.service.cron.KoEnrichmentService;
 import lombok.RequiredArgsConstructor;
@@ -28,17 +29,16 @@ public class CronController {
     }
 
     @PostMapping("/internal/cron/collect-artist")
-    public ResponseEntity<Integer> collectByArtist(
+    public ResponseEntity<CronBatchService.SaveResult> collectByArtist(
             @RequestHeader("X-Cron-Secret") String requestSecret,
             @RequestParam String name) {
         internalSecrets.verifyAdmin(requestSecret);
 
-        int saved = cronService.collectByArtist(name);
-        return ResponseEntity.ok(saved);
+        return ResponseEntity.ok(cronService.collectByArtist(name));
     }
 
     @PostMapping("/internal/cron/collect-artist-id")
-    public ResponseEntity<Integer> collectByArtistId(
+    public ResponseEntity<CronBatchService.SaveResult> collectByArtistId(
             @RequestHeader("X-Cron-Secret") String requestSecret,
             @RequestParam long artistId) {
         internalSecrets.verifyAdmin(requestSecret);

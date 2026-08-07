@@ -418,11 +418,14 @@ if [ "$JOB" = "collect-artist" ] || [ "$JOB" = "collect-artist-id" ]; then
             --data-urlencode "$PARAM=$artist" \
             -H "X-Cron-Secret: $ADMIN_SECRET")
         CODE=$(echo "$BODY" | tail -1)
-        SAVED=$(echo "$BODY" | sed '$d')
+        RESULT=$(echo "$BODY" | sed '$d')
         if [ "$CODE" != "200" ]; then
-            echo "[cron] ERROR ($CODE) for '$artist': $SAVED"
+            echo "[cron] ERROR ($CODE) for '$artist': $RESULT"
         else
-            echo "[cron] '$artist' → saved $SAVED tracks"
+            # 저장 수만 찍으면 왜 적게 들어갔는지 알 수가 없다. 버린 이유까지 한 줄로.
+            echo "[cron] '$artist' → $(echo "$RESULT" | jq -r '"found \(.found), saved \(.saved), dup \(.duplicate), genre-dropped \(.genreDropped), incomplete \(.incomplete)"')"
+            DROPPED=$(echo "$RESULT" | jq -r 'if (.unmappedGenres | length) > 0 then "  드롭된 장르: " + (.unmappedGenres | join(", ")) else empty end')
+            [ -n "$DROPPED" ] && echo "[cron] $DROPPED"
         fi
         sleep 1
     done

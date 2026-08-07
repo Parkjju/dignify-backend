@@ -1,6 +1,7 @@
 package com.rta.dignify.repository;
 
 import com.rta.dignify.domain.Track;
+import com.rta.dignify.dto.admin.GenreStat;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -53,6 +54,11 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
     boolean existsByExternalIdAndSource(String externalId, String source);
 
     long countByIsActiveTrueAndArtistNameContainingIgnoreCase(String artistName);
+
+    /// 어드민 현황 화면용. 곡이 하나도 없는 장르는 여기 안 나온다 — 그것도 봐야 하므로 호출부에서 채운다.
+    @Query("SELECT new com.rta.dignify.dto.admin.GenreStat(g.genreNameEn, COUNT(t)) " +
+            "FROM Track t JOIN t.genre g WHERE t.isActive = TRUE GROUP BY g.genreNameEn ORDER BY COUNT(t) DESC")
+    List<GenreStat> countByGenre();
 
     @Query("SELECT t.externalId FROM Track t WHERE t.koChecked = FALSE ORDER BY t.id LIMIT :limit")
     List<String> findUncheckedExternalIds(@Param("limit") Integer limit);

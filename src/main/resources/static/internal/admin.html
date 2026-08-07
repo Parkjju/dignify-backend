@@ -36,6 +36,18 @@
   .muted { opacity: .6; font-size: 12px; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
   th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #8882; }
+  /* 크기 비교 하나짜리라 색은 한 가지로 충분하다 — 범례도, 카테고리 팔레트도 필요 없다.
+     막대 끝에 수치를 직접 붙여 축을 없앤다. */
+  :root { --bar: #2d7ff9; --bar-empty: #d33; }
+  @media (prefers-color-scheme: dark) { :root { --bar: #5b9cff; --bar-empty: #ff6b6b; } }
+  .stat { display: grid; grid-template-columns: 8.5rem 1fr auto; gap: 10px; align-items: center; padding: 3px 0; }
+  .stat .track { display: block; background: #8881; border-radius: 4px; height: 14px; }
+  .stat .fill { display: block; background: var(--bar); border-radius: 4px; height: 100%; min-width: 2px; }
+  .stat .fill.zero { background: var(--bar-empty); }
+  .stat .n { font-variant-numeric: tabular-nums; opacity: .75; }
+  .stat .g { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .breakdown { font-size: 12px; opacity: .75; padding: 4px 0 8px 6px; line-height: 1.7; }
+  .breakdown b { font-weight: 600; opacity: 1; }
   #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #222; color: #fff; padding: 9px 16px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; }
   #toast.on { opacity: 1; }
 </style>
@@ -47,6 +59,7 @@
     <button data-tab="curation" class="on">큐레이션</button>
     <button data-tab="artist">아티스트 요청</button>
     <button data-tab="push">푸시</button>
+    <button data-tab="stats">현황</button>
   </nav>
   <span class="sp"></span>
   <button onclick="logout()">로그아웃</button>
@@ -114,6 +127,18 @@
       <div class="col">
         <h2>등록된 기기</h2>
         <div id="users"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 현황 -->
+  <section id="stats">
+    <div class="cols">
+      <div class="col">
+        <h2>장르별 곡 수</h2>
+        <div id="genreStats"></div>
+        <p class="muted">노출 장르 13개 전부 나온다. 0곡이면 빨간 막대 — 곡이 없는 게 아니라 iTunes
+          장르명이 매핑에 없어 버려지는 중일 수 있다(GenreMapping).</p>
       </div>
     </div>
   </section>
@@ -265,8 +290,21 @@ function searchArtists() {
     $('#candidates').innerHTML = rows.length ? rows.map(a => `<div class="item">
       <div class="t"><b>${esc(a.artistName)}</b><span>${esc(a.primaryGenreName)} · <a href="${esc(a.artistLinkUrl)}" target="_blank">Apple Music</a></span></div>
       <button onclick="collect(${a.artistId}, this)">수집</button>
-    </div>`).join('') : '<p class="muted">후보 없음 — iTunes에 없거나 표기가 다르다</p>';
+    </div><div class="breakdown" id="bd-${a.artistId}"></div>`).join('') : '<p class="muted">후보 없음 — iTunes에 없거나 표기가 다르다</p>';
   });
+}
+
+// '4곡 저장'만 보면 카탈로그가 작은 건지 버려진 건지 알 수 없다. 버린 이유까지 적는다.
+function breakdown(r) {
+  const parts = [`iTunes <b>${r.found}</b>곡 → 저장 <b>${r.saved}</b>`];
+  if (r.duplicate) parts.push(`이미 있음 ${r.duplicate}`);
+  if (r.genreDropped) parts.push(`장르 드롭 <b>${r.genreDropped}</b>`);
+  if (r.incomplete) parts.push(`정보 부족 ${r.incomplete}`);
+  let html = parts.join(' · ');
+  if (r.unmappedGenres.length) {
+    html += `<br>드롭된 장르: <b>${esc(r.unmappedGenres.join(', '))}</b> — 남길 장르면 GenreMapping.ALIASES에 추가할 것`;
+  }
+  return html;
 }
 
 // 카탈로그 200곡까지 훑고 저장까지 동기로 끝난다. 수십 초 걸릴 수 있어 버튼을 잠근다.
@@ -274,8 +312,9 @@ async function collect(artistId, btn) {
   btn.disabled = true;
   btn.textContent = '수집중…';
   try {
-    const saved = await api('POST', '/internal/cron/collect-artist-id?artistId=' + artistId);
-    btn.textContent = saved + '곡 저장';
+    const r = await api('POST', '/internal/cron/collect-artist-id?artistId=' + artistId);
+    btn.textContent = r.saved + '곡 저장';
+    $('#bd-' + artistId).innerHTML = breakdown(r);
     loadRequests();
   } catch (e) {
     toast('실패: ' + e.message);
@@ -321,8 +360,22 @@ function sendPush() {
   });
 }
 
+/* ---------- 현황 ---------- */
+function loadGenreStats() {
+  run(async () => {
+    const rows = await api('GET', '/internal/admin/genre-stats');
+    const max = Math.max(...rows.map(r => r.tracks), 1);
+    const total = rows.reduce((s, r) => s + r.tracks, 0);
+    $('#genreStats').innerHTML = rows.map(r => `<div class="stat" title="${esc(r.genre)} ${r.tracks.toLocaleString()}곡 (${(r.tracks / total * 100).toFixed(1)}%)">
+      <span class="g">${esc(r.genre)}</span>
+      <span class="track"><span class="fill${r.tracks ? '' : ' zero'}" style="width:${r.tracks / max * 100}%"></span></span>
+      <span class="n">${r.tracks.toLocaleString()}</span>
+    </div>`).join('') + `<div class="bar muted">전체 ${total.toLocaleString()}곡</div>`;
+  });
+}
+
 /* ---------- 탭 ---------- */
-const loaders = { curation: loadSet, artist: loadRequests, push: loadUsers };
+const loaders = { curation: loadSet, artist: loadRequests, push: loadUsers, stats: loadGenreStats };
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
   document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === b.dataset.tab));

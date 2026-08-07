@@ -57,7 +57,7 @@ public class CronService {
     // 아티스트명 기반 수동 collect. 단발 검색이라 @Async/루프/cronState 없이 동기 처리.
     // 이름이 정확히 일치하는 아티스트가 딱 한 명일 때만 수집한다. 0명(로마자 표기 등으로 못 찾음)이거나
     // 2명 이상(동명이인)이면 후보를 로그로 뱉고 중단 — 어느 쪽인지는 사람이 보고 collect-artist-id로 재실행.
-    public int collectByArtist(String artistName) {
+    public CronBatchService.SaveResult collectByArtist(String artistName) {
         String name = artistName.trim();
         log.info("collect-artist '{}' resolving artistId...", name);
         List<ItunesItem> candidates = iTunesAPIClient.searchArtists(name);
@@ -73,7 +73,7 @@ public class CronService {
             }
             candidates.forEach(a -> log.warn("collect-artist '{}'   artistId={} name='{}' genre={} {}",
                     name, a.artistId(), a.artistName(), a.primaryGenreName(), a.artistLinkUrl()));
-            return 0;
+            return CronBatchService.SaveResult.empty();
         }
 
         ItunesItem artist = exact.get(0);
@@ -82,12 +82,11 @@ public class CronService {
     }
 
     // 동명이인 때문에 중단된 건을 사람이 artistId로 지정해 수집한다.
-    public int collectByArtistId(long artistId) {
+    public CronBatchService.SaveResult collectByArtistId(long artistId) {
         List<ItunesItem> items = iTunesAPIClient.lookupSongsByArtistId(artistId);
         log.info("collect-artist artistId={} found {} tracks with preview — saving...", artistId, items.size());
-        int saved = cronBatchService.saveItems(items);
-        log.info("collect-artist artistId={} finished — found: {}, saved: {}, skipped(dup/no-genre): {}",
-                artistId, items.size(), saved, items.size() - saved);
-        return saved;
+        CronBatchService.SaveResult result = cronBatchService.saveItems(items);
+        log.info("collect-artist artistId={} finished — {}", artistId, result);
+        return result;
     }
 }

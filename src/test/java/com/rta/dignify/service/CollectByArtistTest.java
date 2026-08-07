@@ -34,6 +34,10 @@ class CollectByArtistTest {
                 null, null, null, "https://music.apple.com/artist/" + id, "Rock", null, "US");
     }
 
+    private CronBatchService.SaveResult saveResult(int saved) {
+        return new CronBatchService.SaveResult(saved, saved, 0, 0, 0, List.of());
+    }
+
     private ItunesItem song(long trackId) {
         return new ItunesItem("track", trackId, 1L, "A", "Album", "Song",
                 "art", "preview", "view", null, "Rock", "2020-01-01T00:00:00Z", "US");
@@ -47,9 +51,9 @@ class CollectByArtistTest {
                 artist(1450123549L, "i///u"),      // 다른 이름 — 후보에서 제외
                 artist(447609175L, "I.U.")));
         given(iTunesAPIClient.lookupSongsByArtistId(409076743L)).willReturn(List.of(song(1L), song(2L)));
-        given(cronBatchService.saveItems(List.of(song(1L), song(2L)))).willReturn(2);
+        given(cronBatchService.saveItems(List.of(song(1L), song(2L)))).willReturn(saveResult(2));
 
-        assertThat(cronService.collectByArtist("IU")).isEqualTo(2);
+        assertThat(cronService.collectByArtist("IU").saved()).isEqualTo(2);
     }
 
     @Test
@@ -60,7 +64,7 @@ class CollectByArtistTest {
                 artist(189500228L, "Silica Gel"),
                 artist(1532177805L, "Silica Gel")));
 
-        assertThat(cronService.collectByArtist("Silica Gel")).isZero();
+        assertThat(cronService.collectByArtist("Silica Gel").saved()).isZero();
         verify(cronBatchService, never()).saveItems(org.mockito.ArgumentMatchers.anyList());
     }
 
@@ -69,7 +73,7 @@ class CollectByArtistTest {
     void noExactMatch_abort() {
         given(iTunesAPIClient.searchArtists("산울림")).willReturn(List.of(artist(501604942L, "Sanullim")));
 
-        assertThat(cronService.collectByArtist("산울림")).isZero();
+        assertThat(cronService.collectByArtist("산울림").saved()).isZero();
         verify(cronBatchService, never()).saveItems(org.mockito.ArgumentMatchers.anyList());
     }
 
@@ -78,8 +82,8 @@ class CollectByArtistTest {
     void caseAndWhitespaceInsensitive() {
         given(iTunesAPIClient.searchArtists("radiohead")).willReturn(List.of(artist(657515L, "Radiohead")));
         given(iTunesAPIClient.lookupSongsByArtistId(657515L)).willReturn(List.of(song(1L)));
-        given(cronBatchService.saveItems(List.of(song(1L)))).willReturn(1);
+        given(cronBatchService.saveItems(List.of(song(1L)))).willReturn(saveResult(1));
 
-        assertThat(cronService.collectByArtist("  radiohead  ")).isEqualTo(1);
+        assertThat(cronService.collectByArtist("  radiohead  ").saved()).isEqualTo(1);
     }
 }
