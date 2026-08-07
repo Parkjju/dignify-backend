@@ -10,6 +10,7 @@ import com.rta.dignify.dto.user.PreferGenreUpdateRequest;
 import com.rta.dignify.dto.user.UserProfileResponse;
 import com.rta.dignify.global.exception.BusinessException;
 import com.rta.dignify.global.exception.ErrorCode;
+import com.rta.dignify.global.util.ProfanityFilter;
 import com.rta.dignify.repository.GenreRepository;
 import com.rta.dignify.repository.UserGenreRepository;
 import com.rta.dignify.repository.UserRepository;
@@ -36,6 +37,10 @@ public class UserService {
 
     @Transactional
     public NicknameUpdateResponse changeUserNickname(Long userId, NicknameUpdateRequest request) {
+        // @Pattern이 걸러주는 건 문자셋뿐이라 금칙어는 여기서 따로 본다 (ProfanityFilter, PickService.validatedTitle과 공용).
+        if (ProfanityFilter.contains(request.nickname())) {
+            throw new BusinessException(ErrorCode.USER_NICKNAME_INVALID);
+        }
         User user = userRepository.getReferenceById(userId);
         if (userRepository.existsByNickname(request.nickname())) {
             throw new BusinessException(ErrorCode.USER_NICKNAME_DUPLICATE);

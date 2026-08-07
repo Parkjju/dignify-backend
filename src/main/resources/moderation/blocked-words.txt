@@ -1,0 +1,72 @@
+# 닉네임/픽 제목 공용 금칙어 목록. 배포 없이 갱신하려면 이 파일만 고치면 된다.
+# 매칭은 소문자 변환 + 공백/구두점 제거 후 부분 문자열 포함 여부(ProfanityFilter 참고).
+# 짧고 다른 단어에 흔히 섞이는 토큰(ass, anal, rape, 년, 미친, 보지/자지/새끼 단독 등)은
+# 오탐(Scunthorpe 문제)이 나서 일부러 뺐다 — PickTitleTest의 legitTitlesAreNotBlocked 참고.
+
+# 욕설 (ko) — 변형 표기 포함
+씨발
+시발
+씨팔
+시팔
+씨벌
+시벌
+쓰벌
+ㅅㅂ
+ㅆㅂ
+개새끼
+씹새끼
+십새끼
+씹창
+호로새끼
+호로자식
+개자식
+개놈
+병신
+븅신
+빙신
+ㅂㅅ
+ㅄ
+지랄
+ㅈㄹ
+좆
+좇
+미친놈
+미친년
+썅
+니미럴
+애미없
+엠창
+개소리
+엿먹
+
+# 성적·폭력 (ko)
+섹스
+야동
+딸딸이
+강간
+성폭행
+창녀
+매춘
+성매매
+
+# en — "class"의 ass처럼 흔한 단어에 박히는 것들(ass, cock, tit, anal, rape)은 뺐다
+fuck
+fuk
+shit
+bitch
+cunt
+whore
+slut
+pussy
+nigger
+nigga
+faggot
+asshole
+motherfuck
+porn
+dildo
+blowjob
+jizz
+rapist
+pedophile
+retard

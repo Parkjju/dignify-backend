@@ -6,6 +6,7 @@ import com.rta.dignify.dto.feed.FeedResponse;
 import com.rta.dignify.dto.pick.*;
 import com.rta.dignify.global.exception.BusinessException;
 import com.rta.dignify.global.exception.ErrorCode;
+import com.rta.dignify.global.util.ProfanityFilter;
 import com.rta.dignify.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
@@ -16,10 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -187,7 +186,7 @@ public class PickService {
         String trimmed = title.trim();
         if (trimmed.isEmpty()) return null;
 
-        if (containsProfanity(trimmed)) {
+        if (ProfanityFilter.contains(trimmed)) {
             // 어떤 단어가 걸렸는지는 말하지 않는다 — 우회 가이드가 된다.
             // 이 message는 iOS가 그대로 화면에 띄우는 유일한 서버 문구라 로케일 분기가 필수다
             // (PickComposeView.swift:483). 다른 에러는 클라가 자체 문구로 갈아끼운다.
@@ -198,31 +197,4 @@ public class PickService {
         }
         return trimmed;
     }
-
-    private static boolean containsProfanity(String title) {
-        String normalized = NOT_LETTER_OR_DIGIT.matcher(title.toLowerCase(Locale.ROOT)).replaceAll("");
-        return BLOCKED_WORDS.stream().anyMatch(normalized::contains);
-    }
-
-    /// 공백·특수문자를 걷어내 `ㅅ ㅂ` / `f.u.c.k` 수준의 끼워넣기만 무력화한다.
-    /// **자모 분해도 leet 치환도 하지 않는다** — 정교해질수록 오탐이 늘고, 여기선 오탐이 미탐보다 나쁘다.
-    /// 유저는 왜 막혔는지 모른 채 이탈하고 우리는 그 사건을 400 카운트로밖에 못 본다.
-    /// 호환 자모(ㄱ-ㅎㅏ-ㅣ)를 남기는 게 핵심이다 — 지우면 `ㅅㅂ`가 빈 문자열이 돼 통과한다.
-    private static final Pattern NOT_LETTER_OR_DIGIT = Pattern.compile("[^0-9a-z가-힣ㄱ-ㅎㅏ-ㅣ]");
-
-    /// 이 필터는 어뷰징 방어선이 아니라 **게시 전 필터가 존재한다**는 심사 요건을 만족시키는 관문이다.
-    private static final Set<String> BLOCKED_WORDS = Set.of(
-            // 욕설 (ko) — 변형 표기 포함
-            "씨발", "시발", "씨팔", "시팔", "씨벌", "시벌", "쓰벌", "ㅅㅂ", "ㅆㅂ",
-            "개새끼", "씹새끼", "십새끼", "씹창", "호로새끼", "호로자식", "개자식", "개놈",
-            "병신", "븅신", "빙신", "ㅂㅅ", "ㅄ",
-            "지랄", "ㅈㄹ", "좆", "좇", "미친놈", "미친년", "썅", "니미럴", "애미없", "엠창",
-            "개소리", "엿먹",
-            // 성적·폭력 (ko)
-            "섹스", "야동", "딸딸이", "강간", "성폭행", "창녀", "매춘", "성매매",
-            // en — "class"의 ass처럼 흔한 단어에 박히는 것들(ass · cock · tit · anal · rape)은 뺐다
-            "fuck", "fuk", "shit", "bitch", "cunt", "whore", "slut", "pussy",
-            "nigger", "nigga", "faggot", "asshole", "motherfuck",
-            "porn", "dildo", "blowjob", "jizz", "rapist", "pedophile", "retard"
-    );
 }
