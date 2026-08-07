@@ -26,6 +26,13 @@ class GenreMappingTest {
     }
 
     @Test
+    @DisplayName("iTunes가 CCM 대신 주는 Christian도 CCM으로 접힌다")
+    void christian_foldsIntoCcm() {
+        assertThat(GenreMapping.canonical("Christian")).isEqualTo("CCM");
+        assertThat(GenreMapping.canonical("CCM")).isEqualTo("CCM");
+    }
+
+    @Test
     @DisplayName("매핑에 없는 장르는 null — 호출부가 트랙을 버린다")
     void unmappedGenre_returnsNull() {
         assertThat(GenreMapping.canonical("Chinese Opera")).isNull();
@@ -38,8 +45,8 @@ class GenreMappingTest {
         String[] leaves = {
                 "Bass", "Dubstep", "House", "Jungle/Drum'n'bass", "Electronica", "New Age",
                 "Downtempo", "Techno", "Trance", "Garage", "Blues", "Metal", "Korean Rock",
-                "Singer/Songwriter", "Indie Pop", "Indie Rock", "J-Pop", "Christmas",
-                "Adult Contemporary", "Rap", "Hip-Hop", "Disco", "African Dancehall",
+                "Singer/Songwriter", "Indie Pop", "Indie Rock", "J-Pop", "Christmas", "Holiday",
+                "Christian", "Adult Contemporary", "Rap", "Hip-Hop", "Disco", "African Dancehall",
                 "Funk", "Korean Indie", "Folk", "TV Soundtrack"
         };
         for (String leaf : leaves) {

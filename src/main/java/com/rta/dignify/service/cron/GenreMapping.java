@@ -49,7 +49,12 @@ public final class GenreMapping {
 
             entry("J-Pop", "Pop"),
             entry("Christmas", "Pop"),
+            entry("Holiday", "Pop"),
             entry("Adult Contemporary", "Pop"),
+
+            // iTunes는 같은 아티스트 안에서도 'CCM'과 'Christian'을 섞어 준다. 우리 장르 이름이
+            // CCM이라 Christian이 그대로 드롭되고 있었다 — Red Rocks Worship 200곡 중 194곡.
+            entry("Christian", "CCM"),
 
             entry("Rap", "Hip-Hop/Rap"),
             entry("Hip-Hop", "Hip-Hop/Rap"),
