@@ -1,12 +1,10 @@
 package com.rta.dignify.controller;
 
 import com.rta.dignify.dto.PushBroadcast;
-import com.rta.dignify.global.exception.BusinessException;
-import com.rta.dignify.global.exception.ErrorCode;
+import com.rta.dignify.global.security.InternalSecrets;
 import com.rta.dignify.service.PushService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,14 +15,12 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 public class PushInternalController {
     private final PushService pushService;
-
-    @Value("${cron.secret}")
-    private String cronSecret;
+    private final InternalSecrets internalSecrets;
 
     /// 공지 발송. userId가 없으면 전체, 있으면 그 유저에게만. 발송 대수를 돌려준다.
     @PostMapping("/internal/push/broadcast")
     public ResponseEntity<Integer> broadcast(@RequestHeader("X-Cron-Secret") String secret, @Valid @RequestBody PushBroadcast body) {
-        if (!cronSecret.equals(secret)) throw new BusinessException(ErrorCode.CRON_SECRET_INVALID);
+        internalSecrets.verifyAdmin(secret);
         return ResponseEntity.ok(pushService.broadcast(body.title(), body.body(), body.force(), body.userId(), body.minBuild()));
     }
 }

@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dignify admin</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+  header { display: flex; gap: 8px; align-items: center; padding: 10px 16px; border-bottom: 1px solid #8884; }
+  header h1 { font-size: 15px; margin: 0 12px 0 0; }
+  nav button { padding: 6px 14px; border: 1px solid #8884; background: none; border-radius: 6px; cursor: pointer; font: inherit; color: inherit; }
+  nav button.on { background: #8883; font-weight: 600; }
+  header .sp { flex: 1; }
+  main { padding: 16px; max-width: 1100px; }
+  section { display: none; }
+  section.on { display: block; }
+  .cols { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+  .col { flex: 1 1 380px; min-width: 320px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; opacity: .6; margin: 0 0 8px; }
+  input, textarea, button { font: inherit; color: inherit; }
+  input, textarea { padding: 7px 9px; border: 1px solid #8886; border-radius: 6px; background: none; width: 100%; }
+  .row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+  .row button { white-space: nowrap; flex-shrink: 0; }
+  .item { display: flex; gap: 9px; align-items: center; padding: 6px; border-bottom: 1px solid #8882; }
+  .item img { width: 40px; height: 40px; border-radius: 4px; background: #8883; flex-shrink: 0; }
+  .item .t { flex: 1; min-width: 0; }
+  .item .t b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .t span { opacity: .6; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+  .item button { padding: 4px 8px; border: 1px solid #8886; background: none; border-radius: 5px; cursor: pointer; }
+  .list { max-height: 70vh; overflow-y: auto; }
+  .bar { display: flex; gap: 8px; margin: 10px 0; align-items: center; }
+  .primary { padding: 8px 16px; border: 0; border-radius: 6px; background: #2d7ff9; color: #fff; cursor: pointer; font-weight: 600; }
+  .danger { background: #d33; }
+  .muted { opacity: .6; font-size: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #8882; }
+  #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #222; color: #fff; padding: 9px 16px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast.on { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>dignify admin</h1>
+  <nav>
+    <button data-tab="curation" class="on">큐레이션</button>
+    <button data-tab="artist">아티스트 요청</button>
+    <button data-tab="push">푸시</button>
+  </nav>
+  <span class="sp"></span>
+  <button onclick="logout()">로그아웃</button>
+</header>
+
+<main>
+  <!-- 큐레이션 -->
+  <section id="curation" class="on">
+    <div class="cols">
+      <div class="col">
+        <h2>트랙 검색</h2>
+        <div class="row">
+          <input id="q" placeholder="아티스트 또는 곡 이름" onkeydown="if(event.key==='Enter')search()">
+          <button class="primary" onclick="search()">검색</button>
+        </div>
+        <div class="list" id="results"></div>
+      </div>
+      <div class="col">
+        <h2>이번 세트 (위에서부터 노출)</h2>
+        <div class="list" id="set"></div>
+        <div class="bar">
+          <button class="primary" onclick="applySet()">이 세트로 적용</button>
+          <button onclick="loadSet()">되돌리기</button>
+          <span class="muted" id="setInfo"></span>
+        </div>
+        <p class="muted">적용하면 목록에 없는 곡은 전부 내려간다. 미리듣기는 ▶.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 아티스트 요청 -->
+  <section id="artist">
+    <div class="cols">
+      <div class="col">
+        <h2>대기중인 요청</h2>
+        <div class="list" id="requests"></div>
+      </div>
+      <div class="col">
+        <h2>아티스트 수집</h2>
+        <div class="row">
+          <input id="aq" placeholder="아티스트명 (iTunes 검색)" onkeydown="if(event.key==='Enter')searchArtists()">
+          <button class="primary" onclick="searchArtists()">검색</button>
+        </div>
+        <div class="list" id="candidates"></div>
+        <p class="muted">동명이인이 있으니 장르와 링크로 확인하고 수집할 것. 요청 목록의 [수집]을 누르면 그 이름으로 여기에 후보가 뜬다.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 푸시 -->
+  <section id="push">
+    <div class="cols">
+      <div class="col">
+        <h2>공지 발송</h2>
+        <div class="row"><input id="pTitle" placeholder="제목"></div>
+        <div class="row"><textarea id="pBody" rows="3" placeholder="본문"></textarea></div>
+        <div class="row">
+          <input id="pTo" placeholder="TO: userId (비우면 전체)">
+          <input id="pBuild" placeholder="MIN_BUILD (예: 12)">
+        </div>
+        <div class="row"><label><input type="checkbox" id="pForce" style="width:auto"> 로컬 새벽인 유저에게도 발송 (FORCE)</label></div>
+        <div class="bar"><button class="primary danger" onclick="sendPush()">발송</button></div>
+        <p class="muted">보낸 그대로 알림에 뜬다(번역 없음). 기본은 기기 로컬 09~22시인 유저에게만.</p>
+      </div>
+      <div class="col">
+        <h2>등록된 기기</h2>
+        <div id="users"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<audio id="player"></audio>
+<div id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function secret() {
+  let s = localStorage.cronSecret;
+  if (!s) s = setSecret();
+  return s;
+}
+function setSecret() {
+  const s = prompt('ADMIN_SECRET');
+  if (s) localStorage.cronSecret = s.trim();
+  return localStorage.cronSecret;
+}
+// 남의 컴퓨터에서 열었을 때 쓰는 버튼. 새로고침하면 프롬프트가 다시 뜨므로 여기선 다시 묻지 않고,
+// 저장값과 화면에 남은 내용만 지운다.
+function logout() {
+  delete localStorage.cronSecret;
+  setItems = [];
+  document.querySelectorAll('.list, #users').forEach(e => e.innerHTML = '');
+  $('#setInfo').textContent = '';
+  toast('시크릿을 지웠다. 다시 쓰려면 새로고침.');
+}
+function toast(msg) {
+  $('#toast').textContent = msg;
+  $('#toast').classList.add('on');
+  setTimeout(() => $('#toast').classList.remove('on'), 2600);
+}
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: { 'X-Cron-Secret': secret(), ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+    body: body !== undefined ? JSON.stringify(body) : undefined
+  });
+  if (res.status === 401) { delete localStorage.cronSecret; throw new Error('시크릿이 틀렸다. 다시 입력할 것.'); }
+  if (!res.ok) throw new Error((await res.text()) || res.status);
+  return res.status === 204 ? null : res.json();
+}
+const run = fn => fn().catch(e => toast('실패: ' + e.message));
+
+function play(trackId) {
+  const p = $('#player'), url = seen[trackId].previewUrl;
+  if (!p.paused && p.src === url) { p.pause(); return; }
+  p.src = url;
+  p.play();
+}
+
+/* ---------- 큐레이션 ---------- */
+let setItems = [];
+// 화면에 한 번이라도 그린 트랙. 버튼이 id만 넘기면 되도록 여기서 꺼내 쓴다 —
+// 곡명에 따옴표가 흔해서(Don't) onclick 속성에 값을 박아 넣으면 깨진다.
+const seen = {};
+
+function trackRow(t, actions) {
+  seen[t.trackId] = t;
+  return `<div class="item">
+    <img src="${esc(t.artworkUrl)}" alt="">
+    <div class="t"><b>${esc(t.trackName)}</b><span>${esc(t.artistName)} · ${esc(t.genreNameEn)} · #${t.trackId}</span></div>
+    <button onclick="play(${t.trackId})">▶</button>${actions}
+  </div>`;
+}
+
+// 앱과 같은 검색 API를 그대로 쓴다. 한 번에 10곡씩이라 카탈로그를 훑으려면 더보기가 필요하다.
+let nextCursor = null;
+
+function search(append) {
+  const q = $('#q').value.trim();
+  if (!q) return;
+  run(async () => {
+    const url = '/feed/search?q=' + encodeURIComponent(q) + (append && nextCursor ? '&cursor=' + encodeURIComponent(nextCursor) : '');
+    const data = await (await fetch(url)).json();
+    nextCursor = data.nextCursor;
+    const rows = data.items.map(t => trackRow(t, `<button onclick="addToSet(${t.trackId})">담기</button>`)).join('')
+      + (data.hasMore ? '<div class="bar"><button onclick="search(true)">더보기</button></div>' : '');
+    $('#results').querySelector('.bar')?.remove();
+    if (append) $('#results').insertAdjacentHTML('beforeend', rows);
+    else $('#results').innerHTML = rows || '<p class="muted">결과 없음</p>';
+  });
+}
+
+function addToSet(trackId) {
+  if (setItems.some(x => x.trackId === trackId)) return toast('이미 세트에 있다');
+  setItems.push(seen[trackId]);
+  renderSet();
+}
+function move(i, d) {
+  const j = i + d;
+  if (j < 0 || j >= setItems.length) return;
+  [setItems[i], setItems[j]] = [setItems[j], setItems[i]];
+  renderSet();
+}
+function removeFromSet(i) { setItems.splice(i, 1); renderSet(); }
+
+function renderSet() {
+  $('#set').innerHTML = setItems.length
+    ? setItems.map((t, i) => trackRow(t, `<button onclick="move(${i},-1)">↑</button><button onclick="move(${i},1)">↓</button><button onclick="removeFromSet(${i})">✕</button>`)).join('')
+    : '<p class="muted">비어 있음 — 이대로 적용하면 세트가 내려간다</p>';
+  $('#setInfo').textContent = setItems.length + '곡';
+}
+
+function loadSet() {
+  run(async () => { setItems = await api('GET', '/internal/admin/curation'); renderSet(); });
+}
+
+function applySet() {
+  const names = setItems.map((t, i) => `${i + 1}. ${t.artistName} - ${t.trackName}`).join('\n');
+  if (!confirm(`이 ${setItems.length}곡을 세트로 내보낸다. 목록에 없는 곡은 전부 내려간다.\n\n${names}`)) return;
+  run(async () => {
+    setItems = await api('PUT', '/internal/admin/curation', setItems.map(t => t.trackId));
+    renderSet();
+    toast('세트 적용 완료');
+  });
+}
+
+/* ---------- 아티스트 요청 ---------- */
+let requests = [];
+
+function loadRequests() {
+  run(async () => {
+    requests = await api('GET', '/internal/admin/artist-requests');
+    $('#requests').innerHTML = requests.length ? requests.map((r, i) => `<div class="item">
+      <div class="t"><b>${esc(r.artistName)}</b><span>#${r.id} · ${esc(r.nickname)} · ${new Date(r.createdAt).toLocaleDateString()} · 피드 ${r.trackCount}곡</span></div>
+      <button onclick="prefillArtist(${i})">수집</button>
+      <button onclick="resolve(${r.id}, 'ADDED')">추가완료</button>
+      <button onclick="resolve(${r.id}, 'CANCELED')">거절</button>
+    </div>`).join('') : '<p class="muted">대기중인 요청 없음</p>';
+  });
+}
+
+function prefillArtist(i) { $('#aq').value = requests[i].artistName; searchArtists(); }
+
+function searchArtists() {
+  const q = $('#aq').value.trim();
+  if (!q) return;
+  run(async () => {
+    const rows = await api('GET', '/internal/admin/itunes/artists?q=' + encodeURIComponent(q));
+    $('#candidates').innerHTML = rows.length ? rows.map(a => `<div class="item">
+      <div class="t"><b>${esc(a.artistName)}</b><span>${esc(a.primaryGenreName)} · <a href="${esc(a.artistLinkUrl)}" target="_blank">Apple Music</a></span></div>
+      <button onclick="collect(${a.artistId}, this)">수집</button>
+    </div>`).join('') : '<p class="muted">후보 없음 — iTunes에 없거나 표기가 다르다</p>';
+  });
+}
+
+// 카탈로그 200곡까지 훑고 저장까지 동기로 끝난다. 수십 초 걸릴 수 있어 버튼을 잠근다.
+async function collect(artistId, btn) {
+  btn.disabled = true;
+  btn.textContent = '수집중…';
+  try {
+    const saved = await api('POST', '/internal/cron/collect-artist-id?artistId=' + artistId);
+    btn.textContent = saved + '곡 저장';
+    loadRequests();
+  } catch (e) {
+    toast('실패: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = '수집';
+  }
+}
+
+function resolve(id, status) {
+  // 거절 사유는 요청한 유저 화면에 그대로 보인다. 추가완료 사유는 푸시 본문으로 나간다(비우면 앱 기본 문구).
+  const reason = prompt(status === 'CANCELED' ? '거절 사유 (유저 화면에 그대로 보인다)' : '푸시 본문 (비우면 앱 기본 문구)',
+                        status === 'CANCELED' ? 'Not available on Apple Music' : '');
+  if (reason === null) return;
+  run(async () => {
+    await api('POST', `/internal/artist-requests/${id}/resolve`, reason ? { status, cancelReason: reason } : { status });
+    toast(status === 'ADDED' ? '추가완료 — 요청자에게 푸시 발송' : '거절 처리 완료');
+    loadRequests();
+  });
+}
+
+/* ---------- 푸시 ---------- */
+function loadUsers() {
+  run(async () => {
+    const rows = await api('GET', '/internal/admin/push/users');
+    $('#users').innerHTML = rows.length ? `<table><tr><th>userId</th><th>닉네임</th><th>기기</th><th>빌드</th><th>타임존</th></tr>
+      ${rows.map(u => `<tr><td>${u.userId}</td><td>${esc(u.nickname)}</td><td>${u.devices}</td><td>${u.builds.join(', ') || '-'}</td><td>${esc(u.timeZones.join(', ')) || '-'}</td></tr>`).join('')}</table>`
+      : '<p class="muted">등록된 토큰 없음</p>';
+  });
+}
+
+function sendPush() {
+  const title = $('#pTitle').value.trim(), body = $('#pBody').value.trim();
+  if (!title || !body) return toast('제목과 본문을 채울 것');
+  const to = $('#pTo').value.trim(), minBuild = $('#pBuild').value.trim();
+  if (!to && !confirm(`전체 유저에게 발송한다. 회수 안 된다.\n\n${title}\n${body}`)) return;
+  run(async () => {
+    const sent = await api('POST', '/internal/push/broadcast', {
+      title, body, force: $('#pForce').checked,
+      userId: to ? Number(to) : null,
+      minBuild: minBuild ? Number(minBuild) : null
+    });
+    toast(sent + '대에 발송했다' + (sent === 0 ? ' — 토큰이 없거나 전부 로컬 새벽이다' : ''));
+  });
+}
+
+/* ---------- 탭 ---------- */
+const loaders = { curation: loadSet, artist: loadRequests, push: loadUsers };
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === b.dataset.tab));
+  loaders[b.dataset.tab]();
+});
+loadSet();
+</script>
+</body>
+</html>

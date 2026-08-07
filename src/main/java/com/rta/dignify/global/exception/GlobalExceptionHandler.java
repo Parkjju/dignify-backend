@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -59,6 +60,14 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ErrorResponse handleHttpMessageNotReadableException(HttpMessageNotReadableException e) {
+        return ErrorResponse.from(ErrorCode.METHOD_ARGUMENT_NOT_VALID);
+    }
+
+    /// X-Cron-Secret을 빼먹고 부른 /internal/* 요청이 500으로 떨어지던 걸 400으로 돌린다.
+    /// 500이면 서버가 터진 줄 알고 배포부터 뒤지게 된다.
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ErrorResponse handleMissingRequestHeaderException(MissingRequestHeaderException e) {
         return ErrorResponse.from(ErrorCode.METHOD_ARGUMENT_NOT_VALID);
     }
 

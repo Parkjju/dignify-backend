@@ -139,6 +139,11 @@ esac
 
 set -a && source .env && set +a
 
+# 어드민 화면(/internal/admin.html)과 같은 경로 — 푸시, 요청 처리, 아티스트 수집 — 는 어드민
+# 시크릿으로 열린다. 배치(collect/enrich-ko)만 CRON_SECRET을 그대로 쓴다.
+# ADMIN_SECRET이 없으면 서버도 크론 시크릿으로 떨어지므로 여기서도 같이 떨어뜨린다.
+ADMIN_SECRET="${ADMIN_SECRET:-$CRON_SECRET}"
+
 PROXY_PORT=5433
 APP_PORT=8080
 LOG_FILE="/tmp/dignify-bootrun.log"
@@ -175,7 +180,7 @@ if [ "$JOB" = "push" ]; then
     fi
 
     RESP=$(curl -s -w "\n%{http_code}" -X POST "$LIVE_URL/internal/push/broadcast" \
-        -H "X-Cron-Secret: $CRON_SECRET" -H "Content-Type: application/json" \
+        -H "X-Cron-Secret: $ADMIN_SECRET" -H "Content-Type: application/json" \
         -d "$(jq -nc --arg t "$TITLE" --arg b "$BODY" --argjson f "$FORCE" \
                 --argjson u "${TO:-null}" --argjson mb "${MIN_BUILD:-null}" \
                 '{title:$t,body:$b,force:$f,userId:$u,minBuild:$mb}')")
@@ -361,7 +366,7 @@ if [ "$JOB" = "resolve-artist" ] || [ "$JOB" = "cancel-artist" ]; then
 
         CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
             "$LIVE_URL/internal/artist-requests/$id/resolve" \
-            -H "X-Cron-Secret: $CRON_SECRET" -H "Content-Type: application/json" \
+            -H "X-Cron-Secret: $ADMIN_SECRET" -H "Content-Type: application/json" \
             -d "$REQ_BODY")
         if [ "$CODE" != "200" ]; then
             echo "[cron] #$id '$ARTIST' → $NEW_STATUS 처리 실패($CODE)"
@@ -411,7 +416,7 @@ if [ "$JOB" = "collect-artist" ] || [ "$JOB" = "collect-artist-id" ]; then
         BODY=$(curl -s -w "\n%{http_code}" -X POST \
             "http://localhost:$APP_PORT/internal/cron/$JOB" \
             --data-urlencode "$PARAM=$artist" \
-            -H "X-Cron-Secret: $CRON_SECRET")
+            -H "X-Cron-Secret: $ADMIN_SECRET")
         CODE=$(echo "$BODY" | tail -1)
         SAVED=$(echo "$BODY" | sed '$d')
         if [ "$CODE" != "200" ]; then

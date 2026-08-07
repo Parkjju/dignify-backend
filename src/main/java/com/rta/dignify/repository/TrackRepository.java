@@ -52,6 +52,8 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
 
     boolean existsByExternalIdAndSource(String externalId, String source);
 
+    long countByIsActiveTrueAndArtistNameContainingIgnoreCase(String artistName);
+
     @Query("SELECT t.externalId FROM Track t WHERE t.koChecked = FALSE ORDER BY t.id LIMIT :limit")
     List<String> findUncheckedExternalIds(@Param("limit") Integer limit);
 

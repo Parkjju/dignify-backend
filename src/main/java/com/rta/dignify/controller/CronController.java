@@ -1,31 +1,27 @@
 package com.rta.dignify.controller;
 
-import com.rta.dignify.global.exception.BusinessException;
-import com.rta.dignify.global.exception.ErrorCode;
+import com.rta.dignify.global.security.InternalSecrets;
 import com.rta.dignify.service.cron.CronService;
 import com.rta.dignify.service.cron.KoEnrichmentService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+/// 두 종류가 섞여 있다. collect/enrich-ko는 몇 시간 도는 배치라 로컬 스크립트만 부르고(크론 시크릿),
+/// collect-artist류는 어드민 화면의 [수집] 버튼도 부른다(어드민 시크릿).
 @RequiredArgsConstructor
 @RestController
 public class CronController {
 
-    @Value("${cron.secret}")
-    private String cronSecret;
-
     private final CronService cronService;
     private final KoEnrichmentService koEnrichmentService;
+    private final InternalSecrets internalSecrets;
 
     @PostMapping("/internal/cron/collect")
     public ResponseEntity<Void> processCronJob(
             @RequestHeader("X-Cron-Secret") String requestSecret,
             @RequestParam long endIndex) throws InterruptedException {
-        if (!cronSecret.equals(requestSecret)) {
-            throw new BusinessException(ErrorCode.CRON_SECRET_INVALID);
-        }
+        internalSecrets.verifyCron(requestSecret);
 
         cronService.callItunesAPI("track_collect", endIndex);
         return ResponseEntity.accepted().build();
@@ -35,9 +31,7 @@ public class CronController {
     public ResponseEntity<Integer> collectByArtist(
             @RequestHeader("X-Cron-Secret") String requestSecret,
             @RequestParam String name) {
-        if (!cronSecret.equals(requestSecret)) {
-            throw new BusinessException(ErrorCode.CRON_SECRET_INVALID);
-        }
+        internalSecrets.verifyAdmin(requestSecret);
 
         int saved = cronService.collectByArtist(name);
         return ResponseEntity.ok(saved);
@@ -47,9 +41,7 @@ public class CronController {
     public ResponseEntity<Integer> collectByArtistId(
             @RequestHeader("X-Cron-Secret") String requestSecret,
             @RequestParam long artistId) {
-        if (!cronSecret.equals(requestSecret)) {
-            throw new BusinessException(ErrorCode.CRON_SECRET_INVALID);
-        }
+        internalSecrets.verifyAdmin(requestSecret);
 
         return ResponseEntity.ok(cronService.collectByArtistId(artistId));
     }
@@ -57,9 +49,7 @@ public class CronController {
     @PostMapping("/internal/cron/enrich-ko")
     public ResponseEntity<Void> processKoEnrichment(
             @RequestHeader("X-Cron-Secret") String requestSecret) throws InterruptedException {
-        if (!cronSecret.equals(requestSecret)) {
-            throw new BusinessException(ErrorCode.CRON_SECRET_INVALID);
-        }
+        internalSecrets.verifyCron(requestSecret);
 
         koEnrichmentService.enrichKo();
         return ResponseEntity.accepted().build();
