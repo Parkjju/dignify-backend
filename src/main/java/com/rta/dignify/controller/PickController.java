@@ -3,6 +3,7 @@ package com.rta.dignify.controller;
 import com.rta.dignify.dto.feed.FeedResponse;
 import com.rta.dignify.dto.pick.PickCreate;
 import com.rta.dignify.dto.pick.PickListResponse;
+import com.rta.dignify.dto.pick.PickReactionRequest;
 import com.rta.dignify.dto.pick.PickResponse;
 import com.rta.dignify.global.exception.BusinessException;
 import com.rta.dignify.global.exception.ErrorCode;
@@ -42,5 +43,17 @@ public class PickController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deletePick(@AuthenticationPrincipal Long userId, @PathVariable Long pickId) {
         pickService.deletePick(userId, pickId);
+    }
+
+    @PutMapping("/{pickId}/reaction")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void setReaction(@AuthenticationPrincipal Long userId, @PathVariable Long pickId, @RequestBody @Valid PickReactionRequest request) {
+        pickService.setReaction(userId, pickId, request);
+    }
+
+    @DeleteMapping("/{pickId}/reaction")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteReaction(@AuthenticationPrincipal Long userId, @PathVariable Long pickId) {
+        pickService.deleteReaction(userId, pickId);
     }
 }

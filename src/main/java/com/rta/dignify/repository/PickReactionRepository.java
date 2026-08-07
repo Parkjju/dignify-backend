@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface PickReactionRepository extends JpaRepository<PickReaction, Long> {
 
@@ -25,4 +26,6 @@ public interface PickReactionRepository extends JpaRepository<PickReaction, Long
         WHERE pr.pick.id IN :pickIds AND pr.user.id = :userId
     """)
     List<PickReaction> findPickReactionsByUserIdInPickIds(@Param("pickIds") List<Long> pickIds, @Param("userId") Long userId);
+
+    Optional<PickReaction> findByPickIdAndUserId(Long pickId, Long userId);
 }

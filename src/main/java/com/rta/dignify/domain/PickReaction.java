@@ -32,4 +32,18 @@ public class PickReaction extends BaseTimeEntity {
 
     @Column(name = "emoji", length = 16, nullable = false)
     private String emoji;
+
+    private PickReaction(Pick pick, User user, String emoji) {
+        this.pick = pick;
+        this.user = user;
+        this.emoji = emoji;
+    }
+
+    public static PickReaction create(Pick pick, User user,String emoji) {
+        return new PickReaction(pick, user, emoji);
+    }
+
+    public void changeEmoji(String emoji) {
+        this.emoji = emoji;
+    }
 }

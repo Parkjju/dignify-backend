@@ -27,6 +27,7 @@ import java.util.stream.IntStream;
 public class PickService {
 
     static final int PAGE_SIZE = 20;
+    static final Set<String> ALLOWED_EMOJIS = Set.of("🔥", "🫶", "🥲", "🪩", "👀");
 
     private final PickReactionRepository pickReactionRepository;
     private final PickTrackRepository pickTrackRepository;
@@ -114,6 +115,27 @@ public class PickService {
             throw new BusinessException(ErrorCode.PICK_DOES_NOT_EXIST);
         }
         pick.delete();
+    }
+
+    @Transactional
+    public void setReaction(Long userId, Long pickId, PickReactionRequest request) {
+        User user = userRepository.findById(userId).orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        Pick pick = pickRepository.findById(pickId).orElseThrow(() -> new BusinessException(ErrorCode.PICK_DOES_NOT_EXIST));
+        String emoji = request.emoji();
+        if (pick.getIsDeleted()) {
+            throw new BusinessException(ErrorCode.PICK_DOES_NOT_EXIST);
+        }
+        if (!ALLOWED_EMOJIS.contains(request.emoji())) {
+            throw new BusinessException(ErrorCode.INVALID_EMOJI);
+        }
+        pickReactionRepository.findByPickIdAndUserId(pickId, userId)
+                        .ifPresentOrElse(r -> r.changeEmoji(emoji), () -> pickReactionRepository.save(PickReaction.create(pick, user, emoji)));
+    }
+
+    @Transactional
+    public void deleteReaction(Long userId, Long pickId) {
+        pickReactionRepository.findByPickIdAndUserId(pickId, userId)
+                .ifPresent(pickReactionRepository::delete);
     }
 
     /**

@@ -43,6 +43,9 @@ public enum ErrorCode {
     PICK_DOES_NOT_EXIST(HttpStatus.NOT_FOUND, "픽이 존재하지 않습니다."),
     PICK_TITLE_BLOCKED(HttpStatus.BAD_REQUEST, "입력하신 내용에 제한이 되는 단어가 포함되어 있습니다."),
 
+    // Reaction domain
+    INVALID_EMOJI(HttpStatus.BAD_REQUEST, "유효하지 않은 이모지입니다."),
+
     // common domain
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 에러가 발생했습니다."),
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "요청 메서드가 잘못되었습니다."),
