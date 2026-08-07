@@ -28,4 +28,12 @@ public interface PickReactionRepository extends JpaRepository<PickReaction, Long
     List<PickReaction> findPickReactionsByUserIdInPickIds(@Param("pickIds") List<Long> pickIds, @Param("userId") Long userId);
 
     Optional<PickReaction> findByPickIdAndUserId(Long pickId, Long userId);
+
+    /// 마일스톤 푸시(§10.5) 판정용. **소유자 본인 반응은 뺀다** —
+    /// 안 빼면 자기 픽에 🔥 누르고 자기가 "첫 반응" 알림을 받는다.
+    @Query(value = """
+        SELECT COUNT(pr) FROM PickReaction pr
+        WHERE pr.pick.id = :pickId AND pr.user.id <> :ownerId
+    """)
+    long countByPickIdExcludingOwner(@Param("pickId") Long pickId, @Param("ownerId") Long ownerId);
 }

@@ -55,6 +55,33 @@ public class PushService {
         return builder.build();
     }
 
+    /// 내 픽에 반응이 마일스톤에 닿았음을 알린다(§10.5). 발송 여부 판정은 `PickService`가 한다.
+    ///
+    /// ⚠️ 문구를 서버에서 만들지 않는 이유 — `LocaleContextHolder`는 **반응을 누른 사람**의
+    /// 로케일이지 알림을 받는 픽 주인의 것이 아니다. 한국 유저가 미국 유저 픽에 반응하면
+    /// 미국 유저에게 한국어 알림이 간다. loc-key로 보내면 기기가 자기 언어로 렌더한다.
+    ///
+    /// ⚠️ `broadcast`의 시간대 필터를 여기 걸지 않는다. 그건 전체 발송용이고, 개별 반응 푸시에
+    /// 걸면 `time_zone`이 null인 기기가 통째로 잘려 조용히 아무것도 안 간다.
+    public void sendPickReaction(Long ownerId, String reactorNickname, long count) {
+        String payload = pickReactionPayload(reactorNickname, count);
+
+        for (UserDeviceToken t : tokenRepository.findByUserId(ownerId)) {
+            send(t, payload);
+        }
+    }
+
+    /// 1명일 때만 이름을 댄다. 여럿일 때 한 명을 대는 건 나머지를 지운다.
+    /// 본문은 안 넣는다 — 탭해도 그 픽으로 못 가서(딥링크 미구현) "보러 가기"가 거짓말이 된다.
+    static String pickReactionPayload(String reactorNickname, long count) {
+        String key = count == 1 ? "push_pick_reaction_first" : "push_pick_reaction_milestone";
+        String arg = count == 1 ? reactorNickname : String.valueOf(count);
+        return new SimpleApnsPayloadBuilder()
+                .setLocalizedAlertTitle(key, arg)
+                .setSound(SimpleApnsPayloadBuilder.DEFAULT_SOUND_FILENAME)
+                .build();
+    }
+
     /// 운영자가 손으로 쏘는 공지 푸시(run-cron.sh push). 발송 대수를 돌려준다.
     ///
     /// 문구를 loc-key가 아니라 원문 그대로 받는 이유는, 보낼 때마다 내용이 달라 앱에 키를

@@ -8,6 +8,7 @@ import com.rta.dignify.global.exception.BusinessException;
 import com.rta.dignify.global.exception.ErrorCode;
 import com.rta.dignify.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,8 @@ public class PickService {
 
     static final int PAGE_SIZE = 20;
     static final Set<String> ALLOWED_EMOJIS = Set.of("🔥", "🫶", "🥲", "🪩", "👀");
+    /// 100 이후는 안 보낸다 — 이 규모에서 도달할 일이 없고, 도달하면 그때 정한다.
+    static final Set<Long> REACTION_MILESTONES = Set.of(1L, 5L, 10L, 20L, 50L, 100L);
 
     private final PickReactionRepository pickReactionRepository;
     private final PickTrackRepository pickTrackRepository;
@@ -35,6 +38,9 @@ public class PickService {
     private final UserHypeTrackRepository userHypeTrackRepository;
     private final UserRepository userRepository;
     private final TrackRepository trackRepository;
+    /// apns.enabled=false(테스트/로컬)면 PushService 빈이 없다. 직접 주입하면 컨텍스트가 안 뜬다.
+    /// ArtistRequestService와 같은 패턴.
+    private final ObjectProvider<PushService> pushService;
 
     @Transactional(readOnly = true)
     public PickListResponse getPicks(Long userId, String cursorString, boolean mine) {
@@ -130,6 +136,25 @@ public class PickService {
         }
         pickReactionRepository.findByPickIdAndUserId(pickId, userId)
                         .ifPresentOrElse(r -> r.changeEmoji(emoji), () -> pickReactionRepository.save(PickReaction.create(pick, user, emoji)));
+        notifyIfMilestone(pick, user);
+    }
+
+    /// 반응이 마일스톤에 닿았으면 픽 주인에게 푸시한다(§10.5). 반응마다 보내지 않는다.
+    ///
+    /// `count > maxNotifiedReactions`가 **이모지 교체와 재요청에서 재발송을 막는다** — 둘 다
+    /// 카운트가 안 변하고, 직전 발송에서 `max`가 이미 그 값으로 올라가 있다.
+    /// 해제(`deleteReaction`)는 여기를 안 부른다.
+    private void notifyIfMilestone(Pick pick, User reactor) {
+        Long ownerId = pick.getUser().getId();
+        // COUNT는 JPQL이라 auto-flush가 걸려 방금 넣은 반응이 보인다.
+        long count = pickReactionRepository.countByPickIdExcludingOwner(pick.getId(), ownerId);
+        if (count <= pick.getMaxNotifiedReactions() || !REACTION_MILESTONES.contains(count)) {
+            return;
+        }
+        pick.markNotified((int) count);
+        // 발송 실패는 whenComplete 콜백에서 끝나 여기로 안 올라온다 — 반응 저장이 푸시 때문에
+        // 롤백되지 않는다. apns.enabled=false(테스트/로컬)면 빈이 없어 no-op다.
+        pushService.ifAvailable(p -> p.sendPickReaction(ownerId, reactor.getNickname(), count));
     }
 
     @Transactional

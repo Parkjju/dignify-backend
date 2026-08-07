@@ -210,6 +210,55 @@ public class PickServiceTest {
     }
 
     @Test
+    @DisplayName("마일스톤 판정에서 소유자 본인 반응은 빠진다 - 자기 픽에 눌러도 첫 반응이 아니다")
+    void ownReactionDoesNotCountTowardMilestone() {
+        pickService.createPick(owner.getId(), new PickCreate(null, trackIds(0)));
+        Pick pick = lastPick();
+
+        pickService.setReaction(owner.getId(), pick.getId(), new PickReactionRequest("🔥"));
+        assertThat(pick.getMaxNotifiedReactions()).isZero();
+
+        pickService.setReaction(other.getId(), pick.getId(), new PickReactionRequest("🔥"));
+        assertThat(pick.getMaxNotifiedReactions()).isEqualTo(1);   // 남이 눌렀을 때가 1번째
+    }
+
+    @Test
+    @DisplayName("이모지 교체 · 재요청은 마일스톤을 다시 찍지 않는다 - 같은 알림이 두 번 가면 안 된다")
+    void milestoneIsNotifiedOnlyOnce() {
+        pickService.createPick(owner.getId(), new PickCreate(null, trackIds(0)));
+        Pick pick = lastPick();
+
+        pickService.setReaction(other.getId(), pick.getId(), new PickReactionRequest("🔥"));
+        assertThat(pick.getMaxNotifiedReactions()).isEqualTo(1);
+
+        // 교체 · 같은 값 재요청 · 껐다 다시 켜기 - 전부 카운트가 1로 되돌아온다
+        pickService.setReaction(other.getId(), pick.getId(), new PickReactionRequest("🫶"));
+        pickService.setReaction(other.getId(), pick.getId(), new PickReactionRequest("🫶"));
+        pickService.deleteReaction(other.getId(), pick.getId());
+        pickService.setReaction(other.getId(), pick.getId(), new PickReactionRequest("🔥"));
+
+        assertThat(pick.getMaxNotifiedReactions()).isEqualTo(1);   // 1에서 안 움직인다
+    }
+
+    @Test
+    @DisplayName("마일스톤이 아닌 카운트는 넘어간다 - 반응마다 보내지 않는다")
+    void nonMilestoneCountsAreSkipped() {
+        pickService.createPick(owner.getId(), new PickCreate(null, trackIds(0)));
+        Pick pick = lastPick();
+
+        // 2 · 3 · 4번째는 마일스톤이 아니라 max가 1에 머문다
+        for (int i = 0; i < 4; i++) {
+            User reactor = userRepository.save(User.create("r" + i + "@dignify.app", "reactor" + i));
+            pickService.setReaction(reactor.getId(), pick.getId(), new PickReactionRequest("🔥"));
+        }
+        assertThat(pick.getMaxNotifiedReactions()).isEqualTo(1);
+
+        User fifth = userRepository.save(User.create("r5@dignify.app", "reactor5"));
+        pickService.setReaction(fifth.getId(), pick.getId(), new PickReactionRequest("🔥"));
+        assertThat(pick.getMaxNotifiedReactions()).isEqualTo(5);
+    }
+
+    @Test
     @DisplayName("제목 수정도 게시와 같은 검증을 탄다 - 갈라 쓰면 수정으로 금칙어가 통과한다")
     void updateTitleSharesTheSameValidation() {
         pickService.createPick(owner.getId(), new PickCreate("처음 제목", trackIds(0)));

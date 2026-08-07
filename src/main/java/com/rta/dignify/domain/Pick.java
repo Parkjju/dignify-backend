@@ -53,4 +53,10 @@ public class Pick extends BaseTimeEntity {
     public void changeTitle(String title) {
         this.title = title;
     }
+
+    /// 반응 마일스톤 푸시를 보낸 지점을 기록한다(§10.5).
+    /// 이 값이 없으면 누가 🔥를 눌렀다 껐다 다시 눌러 4→5→4→5가 될 때 같은 알림이 두 번 간다.
+    public void markNotified(int reactionCount) {
+        this.maxNotifiedReactions = reactionCount;
+    }
 }
