@@ -49,4 +49,8 @@ public class Pick extends BaseTimeEntity {
     public void delete() {
         this.isDeleted = true;
     }
+
+    public void changeTitle(String title) {
+        this.title = title;
+    }
 }

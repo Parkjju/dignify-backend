@@ -138,6 +138,15 @@ public class PickService {
                 .ifPresent(pickReactionRepository::delete);
     }
 
+    @Transactional
+    public void updateTitle(Long userId, Long pickId, PickTitleUpdate request) {
+        Pick pick = pickRepository.findById(pickId).orElseThrow(() -> new BusinessException(ErrorCode.PICK_DOES_NOT_EXIST));
+        if (pick.getIsDeleted() || !pick.getUser().getId().equals(userId)) {
+            throw new BusinessException(ErrorCode.PICK_DOES_NOT_EXIST);
+        }
+        pick.changeTitle(validatedTitle(request.title()));
+    }
+
     /**
      * 픽 제목을 저장 가능한 형태로 만든다. {@code POST /picks}와 {@code PUT /picks/{id}/title}이 함께 쓴다 —
      * 갈라 쓰면 게시에서 막히는 문구가 수정으로는 통과하는 구멍이 생긴다.
