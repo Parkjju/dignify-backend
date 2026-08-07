@@ -382,6 +382,11 @@ function sendPush() {
   const title = $('#pTitle').value.trim(), body = $('#pBody').value.trim();
   if (!title || !body) return toast('제목과 본문을 채울 것');
   const to = $('#pTo').value.trim(), minBuild = $('#pBuild').value.trim();
+  // 숫자가 아니면 Number()가 NaN이 되고 JSON.stringify가 그걸 null로 바꾼다. 그러면 서버는
+  // '대상 없음 = 전체 발송'으로 읽는데, TO를 적었다는 이유로 확인창까지 건너뛴 뒤다.
+  // 본인 기기로 찍어보려던 게 전 유저에게 조용히 나간다 — 한글 자판으로 오타 나기 쉬운 자리다.
+  if (to && !/^\d+$/.test(to)) return toast('TO는 userId(숫자)여야 한다');
+  if (minBuild && !/^\d+$/.test(minBuild)) return toast('MIN_BUILD는 빌드 번호(숫자)여야 한다');
   if (!to && !confirm(`전체 유저에게 발송한다. 회수 안 된다.\n\n${title}\n${body}`)) return;
   run(async () => {
     const sent = await api('POST', '/internal/push/broadcast', {
@@ -389,7 +394,13 @@ function sendPush() {
       userId: to ? Number(to) : null,
       minBuild: minBuild ? Number(minBuild) : null
     });
-    toast(sent + '대에 발송했다' + (sent === 0 ? ' — 토큰이 없거나 전부 로컬 새벽이다' : ''));
+    let why = '';
+    if (sent === 0) {
+      if (to) why = ` — userId=${to} 기기가 없거나 MIN_BUILD에 걸렸다`;
+      else if (minBuild) why = ` — 빌드 ${minBuild} 이상인 기기가 없거나 전부 로컬 새벽이다`;
+      else why = ' — 등록된 토큰이 없거나 전부 로컬 새벽이다';
+    }
+    toast(sent + '대에 발송했다' + why);
   });
 }
 
