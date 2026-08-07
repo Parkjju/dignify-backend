@@ -2,7 +2,7 @@ package com.rta.dignify.controller;
 
 import com.rta.dignify.dto.admin.ArtistRequestItem;
 import com.rta.dignify.dto.admin.GenreStat;
-import com.rta.dignify.dto.admin.PushUserItem;
+import com.rta.dignify.dto.admin.PushTargets;
 import com.rta.dignify.dto.feed.FeedItem;
 import com.rta.dignify.dto.itunes.ItunesItem;
 import com.rta.dignify.global.security.InternalSecrets;
@@ -54,8 +54,8 @@ public class AdminController {
     }
 
     @GetMapping("/push/users")
-    public List<PushUserItem> getPushUsers(@RequestHeader("X-Cron-Secret") String secret) {
+    public PushTargets getPushTargets(@RequestHeader("X-Cron-Secret") String secret) {
         internalSecrets.verifyAdmin(secret);
-        return adminService.getPushUsers();
+        return adminService.getPushTargets();
     }
 }

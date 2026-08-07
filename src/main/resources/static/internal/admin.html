@@ -100,11 +100,11 @@
       <div class="col">
         <h2>아티스트 수집</h2>
         <div class="row">
-          <input id="aq" placeholder="아티스트명 (iTunes 검색)" onkeydown="if(event.key==='Enter')searchArtists()">
+          <input id="aq" placeholder="아티스트명 — 쉼표로 나누면 여러 명 한 번에" onkeydown="if(event.key==='Enter')searchArtists()">
           <button class="primary" onclick="searchArtists()">검색</button>
         </div>
         <div class="list" id="candidates"></div>
-        <p class="muted">동명이인이 있으니 장르와 링크로 확인하고 수집할 것. 요청 목록의 [수집]을 누르면 그 이름으로 여기에 후보가 뜬다.</p>
+        <p class="muted">동명이인이 있으니 장르와 링크로 확인하고 수집할 것. 요청 목록의 [수집]을 누르면 그 이름으로 여기에 후보가 뜬다.<br>쉼표로 나눠 쓰면 후보를 안 고르고 순서대로 수집한다 — 이름이 정확히 하나로 안 좁혀지는 건 건너뛴다.</p>
       </div>
     </div>
   </section>
@@ -282,9 +282,12 @@ function loadRequests() {
 
 function prefillArtist(i) { $('#aq').value = requests[i].artistName; searchArtists(); }
 
+// 쉼표가 있으면 여러 명을 한 번에 수집한다(스크립트의 collect-artist "A" "B"와 같다).
+// 이름이 정확히 하나로 안 좁혀지면 서버가 수집하지 않고 0을 돌려주므로, 그 이름은 따로 골라야 한다.
 function searchArtists() {
   const q = $('#aq').value.trim();
   if (!q) return;
+  if (q.includes(',')) return collectMany(q.split(',').map(s => s.trim()).filter(Boolean));
   run(async () => {
     const rows = await api('GET', '/internal/admin/itunes/artists?q=' + encodeURIComponent(q));
     $('#candidates').innerHTML = rows.length ? rows.map(a => `<div class="item">
@@ -292,6 +295,27 @@ function searchArtists() {
       <button onclick="collect(${a.artistId}, this)">수집</button>
     </div><div class="breakdown" id="bd-${a.artistId}"></div>`).join('') : '<p class="muted">후보 없음 — iTunes에 없거나 표기가 다르다</p>';
   });
+}
+
+async function collectMany(names) {
+  // 내역을 .item 안에 넣으면 안 된다 — .item .t b가 display:block이라 내역의 <b>마다 줄이 바뀐다.
+  $('#candidates').innerHTML = names.map((n, i) =>
+    `<div class="item"><div class="t"><b>${esc(n)}</b></div></div>
+     <div class="breakdown" id="m-${i}">대기중</div>`).join('');
+  for (let i = 0; i < names.length; i++) {
+    const line = $('#m-' + i);
+    line.textContent = '수집중…';
+    try {
+      const r = await api('POST', '/internal/cron/collect-artist?name=' + encodeURIComponent(names[i]));
+      // saved도 found도 0이면 이름이 안 좁혀져 서버가 중단한 것이다. 그 이름만 따로 골라야 한다.
+      line.innerHTML = r.found === 0
+        ? '이름이 안 좁혀졌다 — 이 이름만 따로 검색해서 후보를 고를 것'
+        : breakdown(r);
+    } catch (e) {
+      line.textContent = '실패: ' + e.message;
+    }
+  }
+  loadRequests();
 }
 
 // '4곡 저장'만 보면 카탈로그가 작은 건지 버려진 건지 알 수 없다. 버린 이유까지 적는다.
@@ -338,10 +362,19 @@ function resolve(id, status) {
 /* ---------- 푸시 ---------- */
 function loadUsers() {
   run(async () => {
-    const rows = await api('GET', '/internal/admin/push/users');
-    $('#users').innerHTML = rows.length ? `<table><tr><th>userId</th><th>닉네임</th><th>기기</th><th>빌드</th><th>타임존</th></tr>
-      ${rows.map(u => `<tr><td>${u.userId}</td><td>${esc(u.nickname)}</td><td>${u.devices}</td><td>${u.builds.join(', ') || '-'}</td><td>${esc(u.timeZones.join(', ')) || '-'}</td></tr>`).join('')}</table>`
-      : '<p class="muted">등록된 토큰 없음</p>';
+    const { users, builds } = await api('GET', '/internal/admin/push/users');
+    if (!users.length) return $('#users').innerHTML = '<p class="muted">등록된 토큰 없음</p>';
+
+    // MIN_BUILD를 걸면 그 아래와 빌드 미확인 기기가 빠진다. 몇 대가 남는지 누적으로 보여준다.
+    let atLeast = 0;
+    const cumulative = builds.map(b => (b.build === null ? null : (atLeast += b.devices)));
+
+    $('#users').innerHTML = `<table><tr><th>userId</th><th>닉네임</th><th>기기</th><th>빌드</th><th>타임존</th></tr>
+      ${users.map(u => `<tr><td>${u.userId}</td><td>${esc(u.nickname)}</td><td>${u.devices}</td><td>${u.builds.join(', ') || '-'}</td><td>${esc(u.timeZones.join(', ')) || '-'}</td></tr>`).join('')}</table>
+      <h2 style="margin-top:18px">빌드별 기기</h2>
+      <table><tr><th>빌드</th><th>기기</th><th>MIN_BUILD로 걸면</th></tr>
+      ${builds.map((b, i) => `<tr><td>${b.build ?? '(미확인)'}</td><td>${b.devices}</td>
+        <td class="muted">${b.build === null ? '항상 제외' : cumulative[i] + '대에 발송'}</td></tr>`).join('')}</table>`;
   });
 }
 

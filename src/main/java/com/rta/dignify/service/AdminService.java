@@ -7,6 +7,7 @@ import com.rta.dignify.domain.Track;
 import com.rta.dignify.domain.UserDeviceToken;
 import com.rta.dignify.dto.admin.ArtistRequestItem;
 import com.rta.dignify.dto.admin.GenreStat;
+import com.rta.dignify.dto.admin.PushTargets;
 import com.rta.dignify.dto.admin.PushUserItem;
 import com.rta.dignify.dto.feed.FeedItem;
 import com.rta.dignify.dto.itunes.ItunesItem;
@@ -98,17 +99,28 @@ public class AdminService {
     }
 
     @Transactional(readOnly = true)
-    public List<PushUserItem> getPushUsers() {
-        Map<Long, List<UserDeviceToken>> byUser = userDeviceTokenRepository.findAllWithUser().stream()
-                .collect(Collectors.groupingBy(t -> t.getUser().getId(), LinkedHashMap::new, Collectors.toList()));
+    public PushTargets getPushTargets() {
+        List<UserDeviceToken> tokens = userDeviceTokenRepository.findAllWithUser();
 
-        return byUser.values().stream()
-                .map(tokens -> new PushUserItem(
-                        tokens.get(0).getUser().getId(),
-                        tokens.get(0).getUser().getNickname(),
-                        tokens.size(),
-                        tokens.stream().map(UserDeviceToken::getAppBuild).filter(Objects::nonNull).distinct().sorted().toList(),
-                        tokens.stream().map(UserDeviceToken::getTimeZone).filter(Objects::nonNull).distinct().sorted().toList()))
+        List<PushUserItem> users = tokens.stream()
+                .collect(Collectors.groupingBy(t -> t.getUser().getId(), LinkedHashMap::new, Collectors.toList()))
+                .values().stream()
+                .map(userTokens -> new PushUserItem(
+                        userTokens.get(0).getUser().getId(),
+                        userTokens.get(0).getUser().getNickname(),
+                        userTokens.size(),
+                        userTokens.stream().map(UserDeviceToken::getAppBuild).filter(Objects::nonNull).distinct().sorted().toList(),
+                        userTokens.stream().map(UserDeviceToken::getTimeZone).filter(Objects::nonNull).distinct().sorted().toList()))
                 .toList();
+
+        // 최신 빌드부터. 빌드 미확인(null)은 맨 뒤 — MIN_BUILD를 걸면 통째로 빠지는 무리라 따로 보여야 한다.
+        List<PushTargets.BuildStat> builds = tokens.stream()
+                .collect(Collectors.groupingBy(t -> Optional.ofNullable(t.getAppBuild()), Collectors.counting()))
+                .entrySet().stream()
+                .map(e -> new PushTargets.BuildStat(e.getKey().orElse(null), e.getValue().intValue()))
+                .sorted(Comparator.comparing(PushTargets.BuildStat::build, Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
+
+        return new PushTargets(users, builds);
     }
 }
