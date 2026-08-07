@@ -72,6 +72,20 @@ public class UserServiceTest {
     }
 
     @Test
+    @DisplayName("금칙어가 포함된 닉네임은 거부된다")
+    void changeUserNicknameBlocksProfanity() {
+        User user = User.create("test@gmail.com", "nickname");
+        userRepository.save(user);
+
+        assertThatThrownBy(() -> userService.changeUserNickname(user.getId(), new NicknameUpdateRequest("병신123")))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_NICKNAME_INVALID);
+
+        // 거부된 요청은 반영되지 않는다
+        assertThat(userRepository.findById(user.getId()).orElseThrow().getNickname()).isEqualTo("nickname");
+    }
+
+    @Test
     @DisplayName("온보딩 완료 처리 테스트")
     void completeOnboardingTest() {
         User user = User.create("test@gmail.com", "nickname");
