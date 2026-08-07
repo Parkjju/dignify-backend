@@ -72,12 +72,19 @@ public class PushService {
     }
 
     /// 1명일 때만 이름을 댄다. 여럿일 때 한 명을 대는 건 나머지를 지운다.
-    /// 본문은 안 넣는다 — 탭해도 그 픽으로 못 가서(딥링크 미구현) "보러 가기"가 거짓말이 된다.
+    ///
+    /// **길이가 변하는 문구는 전부 본문으로 보낸다.** iOS 알림의 title은 무조건 한 줄이라
+    /// 닉네임이 긴 유저(최대 20자)의 이름이 들어가면 잘린다. body는 배너에서 두 줄이고
+    /// 펼치면 전부 보인다. 그래서 title은 인자 없는 고정 문구다.
+    ///
+    /// 본문에 "보러 가기" 같은 유도 문구는 안 넣는다 — 딥링크가 없어 탭해도 그 픽으로 못 간다.
     static String pickReactionPayload(String reactorNickname, long count) {
-        String key = count == 1 ? "push_pick_reaction_first" : "push_pick_reaction_milestone";
+        String titleKey = count == 1 ? "push_pick_reaction_first_title" : "push_pick_reaction_milestone_title";
+        String bodyKey = count == 1 ? "push_pick_reaction_first" : "push_pick_reaction_milestone";
         String arg = count == 1 ? reactorNickname : String.valueOf(count);
         return new SimpleApnsPayloadBuilder()
-                .setLocalizedAlertTitle(key, arg)
+                .setLocalizedAlertTitle(titleKey)        // 인자 없는 고정 제목
+                .setLocalizedAlertMessage(bodyKey, arg)  // sendArtistAdded가 이미 쓰는 방식
                 .setSound(SimpleApnsPayloadBuilder.DEFAULT_SOUND_FILENAME)
                 .build();
     }

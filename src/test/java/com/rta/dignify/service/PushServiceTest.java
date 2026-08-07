@@ -62,6 +62,26 @@ class PushServiceTest {
     }
 
     @Test
+    @DisplayName("반응 푸시 — 첫 반응은 닉네임을 본문에 담는다 (title은 한 줄이라 잘린다)")
+    void pickReactionFirstNamesTheReactor() {
+        String payload = PushService.pickReactionPayload("digger_kim", 1);
+
+        assertThat(payload).contains("push_pick_reaction_first_title");
+        assertThat(payload).contains("push_pick_reaction_first", "digger_kim");
+        assertThat(payload).doesNotContain("push_pick_reaction_milestone");
+    }
+
+    @Test
+    @DisplayName("반응 푸시 — 여럿이면 이름 대신 개수. 한 명만 대면 나머지가 지워진다")
+    void pickReactionMilestoneCountsInstead() {
+        String payload = PushService.pickReactionPayload("digger_kim", 5);
+
+        assertThat(payload).contains("push_pick_reaction_milestone_title");
+        assertThat(payload).contains("push_pick_reaction_milestone", "5");
+        assertThat(payload).doesNotContain("digger_kim");
+    }
+
+    @Test
     @DisplayName("타임존이 없거나 이상하면 UTC로 친다 — 발송이 죽지 않는다")
     void fallsBackToUtc() {
         // 04:00Z는 UTC 기준 새벽이라 건너뛰는 쪽
