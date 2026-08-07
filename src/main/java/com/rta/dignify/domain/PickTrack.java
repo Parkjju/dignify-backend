@@ -33,4 +33,14 @@ public class PickTrack extends BaseTimeEntity {
 
     @Column(name = "position", nullable = false)
     private Integer position;
+
+    private PickTrack(Pick pick, Track track, Integer position) {
+        this.pick = pick;
+        this.track = track;
+        this.position = position;
+    }
+
+    public static PickTrack create(Pick pick, Track track, Integer position) {
+        return new PickTrack(pick, track, position);
+    }
 }

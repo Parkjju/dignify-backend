@@ -41,6 +41,7 @@ public enum ErrorCode {
 
     // Pick domain
     PICK_DOES_NOT_EXIST(HttpStatus.NOT_FOUND, "픽이 존재하지 않습니다."),
+    PICK_TITLE_BLOCKED(HttpStatus.BAD_REQUEST, "입력하신 내용에 제한이 되는 단어가 포함되어 있습니다."),
 
     // common domain
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 에러가 발생했습니다."),
