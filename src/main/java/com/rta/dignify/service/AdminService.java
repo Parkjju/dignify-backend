@@ -7,6 +7,7 @@ import com.rta.dignify.domain.Track;
 import com.rta.dignify.domain.UserDeviceToken;
 import com.rta.dignify.dto.admin.ArtistRequestItem;
 import com.rta.dignify.dto.admin.GenreStat;
+import com.rta.dignify.dto.admin.KoBatch;
 import com.rta.dignify.dto.admin.PushTargets;
 import com.rta.dignify.dto.admin.PushUserItem;
 import com.rta.dignify.dto.feed.FeedItem;
@@ -18,6 +19,7 @@ import com.rta.dignify.repository.CurationTrackRepository;
 import com.rta.dignify.repository.TrackRepository;
 import com.rta.dignify.repository.UserDeviceTokenRepository;
 import com.rta.dignify.service.cron.GenreMapping;
+import com.rta.dignify.service.cron.KoEnrichmentBatchService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,11 +33,15 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 @Service
 public class AdminService {
+    /// 로컬 잡과 같은 크기. iTunes lookup은 id를 한 번에 이만큼까지 받는다.
+    private static final int KO_BATCH_SIZE = 190;
+
     private final CurationTrackRepository curationTrackRepository;
     private final TrackRepository trackRepository;
     private final ArtistRequestRepository artistRequestRepository;
     private final UserDeviceTokenRepository userDeviceTokenRepository;
     private final ITunesAPIClient iTunesAPIClient;
+    private final KoEnrichmentBatchService koEnrichmentBatchService;
 
     @Transactional(readOnly = true)
     public List<FeedItem> getCurationSet() {
@@ -96,6 +102,26 @@ public class AdminService {
                         GenreMapping.canonicalNames().stream().filter(g -> !seen.contains(g)).map(g -> new GenreStat(g, 0)))
                 .sorted(Comparator.comparingLong(GenreStat::tracks).reversed())
                 .toList();
+    }
+
+    /// 한글 로컬라이즈가 아직 안 붙은 트랙 수. 새로 수집한 곡은 ko_checked=false로 들어온다.
+    @Transactional(readOnly = true)
+    public long getKoPendingCount() {
+        return trackRepository.countByKoCheckedFalse();
+    }
+
+    /// 한글 보강 한 배치. 로컬 잡(KoEnrichmentService)은 이걸 큐가 빌 때까지 스스로 반복하는데,
+    /// Cloud Run은 요청이 끝나면 CPU를 뺏어서 그 방식이 안 통한다. 그래서 한 배치만 하고 돌려주고,
+    /// 반복은 화면이 맡는다 — 매 호출이 정상 요청이라 스로틀링을 안 탄다.
+    ///
+    /// 트랜잭션을 걸지 않는다. iTunes 호출이 중간에 있고, 배치별 커밋은 안쪽 서비스가 각자 한다.
+    public KoBatch enrichKoBatch() {
+        List<String> externalIds = koEnrichmentBatchService.peekUncheckedExternalIds(KO_BATCH_SIZE);
+        if (externalIds.isEmpty()) {
+            return new KoBatch(0, 0, 0);
+        }
+        int matched = koEnrichmentBatchService.applyKo(externalIds, iTunesAPIClient.lookupKrByTrackIds(externalIds));
+        return new KoBatch(externalIds.size(), matched, koEnrichmentBatchService.countUnchecked());
     }
 
     @Transactional(readOnly = true)

@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// 어드민 화면이 세트를 통째로 덮어쓰는 경로. 순서가 뒤집히거나 이전 세트가 남으면
 /// 앱 대문에 엉뚱한 곡이 걸리므로 여기서 막는다.
-/// iTunes 클라이언트는 이 경로에서 안 쓰이므로 null로 넣고 서비스를 직접 만든다.
+/// iTunes 클라이언트와 ko 보강 배치는 이 경로에서 안 쓰이므로 null로 넣고 서비스를 직접 만든다.
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(JpaAuditingConfig.class)
@@ -44,7 +44,7 @@ public class AdminCurationTest {
 
     @BeforeEach
     void setUp() {
-        adminService = new AdminService(curationTrackRepository, trackRepository, artistRequestRepository, userDeviceTokenRepository, null);
+        adminService = new AdminService(curationTrackRepository, trackRepository, artistRequestRepository, userDeviceTokenRepository, null, null);
 
         Genre genre = Genre.create("Rock", "락");
         entityManager.persistAndFlush(genre);

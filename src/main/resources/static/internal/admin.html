@@ -140,6 +140,17 @@
         <p class="muted">노출 장르 13개 전부 나온다. 0곡이면 빨간 막대 — 곡이 없는 게 아니라 iTunes
           장르명이 매핑에 없어 버려지는 중일 수 있다(GenreMapping).</p>
       </div>
+      <div class="col">
+        <h2>한글 이름 보강</h2>
+        <div id="koStatus" class="muted">확인 중…</div>
+        <div class="bar">
+          <button class="primary" id="koRun" onclick="enrichKo()">채우기 시작</button>
+          <button id="koStop" onclick="koStop = true" style="display:none">중단</button>
+        </div>
+        <p class="muted">새로 수집한 곡은 한글 이름이 비어 있어 한국 유저에게 로마자로 보인다.
+          190곡씩 채우고, 탭을 열어둔 동안만 돈다 — 중단해도 채운 데까지는 남는다.
+          iTunes를 배려해 배치 사이 30초를 쉰다.</p>
+      </div>
     </div>
   </section>
 </main>
@@ -418,8 +429,47 @@ function loadGenreStats() {
   });
 }
 
+/* ---------- 한글 보강 ---------- */
+// 로컬 잡은 서버가 스스로 반복하지만 Cloud Run은 요청이 끝나면 CPU를 뺏는다. 그래서 반복은
+// 여기서 한다 — 배치마다 실제 요청이 나가고, 진행 상황이 그대로 보인다.
+const KO_PAUSE_MS = 30000;
+let koStop = false;
+
+function koLine(remaining, note = '') {
+  $('#koStatus').innerHTML = remaining === 0
+    ? '전부 채워져 있다.'
+    : `한글 미채움 <b>${remaining.toLocaleString()}</b>곡 · 약 ${Math.ceil(remaining / 190)}배치${note}`;
+}
+
+function loadKoPending() {
+  run(async () => koLine(await api('GET', '/internal/admin/ko-pending')));
+}
+
+async function enrichKo() {
+  koStop = false;
+  $('#koRun').style.display = 'none';
+  $('#koStop').style.display = '';
+  let done = 0;
+  try {
+    while (!koStop) {
+      const r = await api('POST', '/internal/admin/enrich-ko/batch');
+      done += r.checked;
+      koLine(r.remaining, ` — 이번에 ${done}곡 처리(한글 찾음 ${r.matched})`);
+      if (r.remaining === 0 || r.checked === 0) break;
+      // 30초 대기. 중단 버튼이 바로 먹도록 1초씩 쪼개 센다.
+      for (let i = 0; i < KO_PAUSE_MS / 1000 && !koStop; i++) await new Promise(r => setTimeout(r, 1000));
+    }
+    toast(koStop ? `중단했다 — ${done}곡까지 처리됨` : `끝났다 — ${done}곡 처리`);
+  } catch (e) {
+    toast('실패: ' + e.message);
+  }
+  $('#koRun').style.display = '';
+  $('#koStop').style.display = 'none';
+}
+
 /* ---------- 탭 ---------- */
-const loaders = { curation: loadSet, artist: loadRequests, push: loadUsers, stats: loadGenreStats };
+const loaders = { curation: loadSet, artist: loadRequests, push: loadUsers,
+                  stats: () => { loadGenreStats(); loadKoPending(); } };
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
   document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === b.dataset.tab));

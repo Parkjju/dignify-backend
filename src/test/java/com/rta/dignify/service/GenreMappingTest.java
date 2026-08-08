@@ -46,7 +46,7 @@ class GenreMappingTest {
                 "Bass", "Dubstep", "House", "Jungle/Drum'n'bass", "Electronica", "New Age",
                 "Downtempo", "Techno", "Trance", "Garage", "Blues", "Metal", "Korean Rock",
                 "Singer/Songwriter", "Indie Pop", "Indie Rock", "J-Pop", "Christmas", "Holiday",
-                "Christian", "Adult Contemporary", "Rap", "Hip-Hop", "Disco", "African Dancehall",
+                "Christian", "Adult Contemporary", "Rap", "Hip-Hop", "Korean Hip-Hop", "Disco", "African Dancehall",
                 "Funk", "Korean Indie", "Folk", "TV Soundtrack"
         };
         for (String leaf : leaves) {

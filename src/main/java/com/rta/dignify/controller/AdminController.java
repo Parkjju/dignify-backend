@@ -2,6 +2,7 @@ package com.rta.dignify.controller;
 
 import com.rta.dignify.dto.admin.ArtistRequestItem;
 import com.rta.dignify.dto.admin.GenreStat;
+import com.rta.dignify.dto.admin.KoBatch;
 import com.rta.dignify.dto.admin.PushTargets;
 import com.rta.dignify.dto.feed.FeedItem;
 import com.rta.dignify.dto.itunes.ItunesItem;
@@ -51,6 +52,19 @@ public class AdminController {
     public List<GenreStat> getGenreStats(@RequestHeader("X-Cron-Secret") String secret) {
         internalSecrets.verifyAdmin(secret);
         return adminService.getGenreStats();
+    }
+
+    @GetMapping("/ko-pending")
+    public long getKoPendingCount(@RequestHeader("X-Cron-Secret") String secret) {
+        internalSecrets.verifyAdmin(secret);
+        return adminService.getKoPendingCount();
+    }
+
+    /// 한 배치만 처리하고 남은 수를 돌려준다. 큐를 비우려면 화면이 remaining이 0이 될 때까지 반복한다.
+    @PostMapping("/enrich-ko/batch")
+    public KoBatch enrichKoBatch(@RequestHeader("X-Cron-Secret") String secret) {
+        internalSecrets.verifyAdmin(secret);
+        return adminService.enrichKoBatch();
     }
 
     @GetMapping("/push/users")

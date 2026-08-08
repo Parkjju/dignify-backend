@@ -58,6 +58,7 @@ public final class GenreMapping {
 
             entry("Rap", "Hip-Hop/Rap"),
             entry("Hip-Hop", "Hip-Hop/Rap"),
+            entry("Korean Hip-Hop", "Hip-Hop/Rap"),
 
             entry("Disco", "Dance"),
             entry("African Dancehall", "Dance"),
