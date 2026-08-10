@@ -58,8 +58,15 @@ jobs:
           docker push "$IMAGE:$GITHUB_SHA"
 
       - name: deploy
+        # --memory / --max-instances 는 원래 여기 없었고, gcloud가 명시 안 한 설정을 이전
+        # 리비전에서 물려주는 덕에 유지되던 값이다. 서비스를 다시 만들면 조용히 기본값으로
+        # 돌아가므로 라이브와 같은 값을 박아둔다.
+        #   --memory       512Mi면 하루 한 번 OOM으로 죽어 2026-08-10에 손으로 1Gi로 올렸다.
+        #   --max-instances 인스턴스당 DB 커넥션이 붙으므로 Cloud SQL 상한을 넘지 않게 20으로 막는다.
         run: |
           gcloud run deploy "$SERVICE" \
             --image "$IMAGE:$GITHUB_SHA" \
             --region "$REGION" \
-            --min-instances 1
+            --min-instances 1 \
+            --max-instances 20 \
+            --memory 1Gi
