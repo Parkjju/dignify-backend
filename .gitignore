@@ -41,9 +41,6 @@ out/
 *.drawio
 *.crswap
 
-# API spec
-openapi.yaml
-
 # Gradle task output stubs
 Get
 Process
