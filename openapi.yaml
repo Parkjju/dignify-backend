@@ -54,6 +54,41 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /auth/google:
+    post:
+      tags: [Auth]
+      summary: Google Sign In (Android)
+      description: >
+        Google ID token을 검증(Google JWKS)하고 JWT를 발급한다. aud는 앱이 쓰는 "웹" OAuth 클라이언트
+        ID(`GOOGLE_CLIENT_ID`)와 대조하며, 미설정이면 모든 요청이 401이다.
+        구글 프로바이더 기준 신규면, **같은 이메일의 살아있는 계정이 있으면 그 계정에 인증수단만 추가(계정 연결)**하고
+        없으면 가입 처리한다. 애플 "이메일 가리기" 계정은 이메일이 안 겹쳐 별도 계정이 된다.
+        `email_verified`가 false거나 email이 비면 401(AUTH_EMAIL_NOT_VERIFIED) — 검증 안 된 이메일로
+        남의 계정에 연결되는 것을 막는다.
+        soft-delete된 유저가 재로그인하면 애플과 동일하게 cascade hard delete 후 재가입 처리한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [idToken]
+              properties:
+                idToken:
+                  type: string
+                  description: Android Credential Manager(GetGoogleIdOption)에서 받은 ID token
+      responses:
+        '200':
+          description: 로그인/가입 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /auth/refresh:
     post:
       tags: [Auth]
