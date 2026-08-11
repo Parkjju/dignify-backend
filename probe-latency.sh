@@ -33,6 +33,12 @@ stats() {
         }'
 }
 
+# 값이 두 갈래로 갈리는 경우가 있어서(서울 VM 실측: 192ms와 862ms가 교대) 중앙값만 보면
+# 안 보인다. 원시값을 그대로 찍어 분포를 눈으로 확인할 수 있게 한다.
+raw() {
+    awk '{printf "%.0f ", $1*1000} END{print ""}' "$1" | fold -s -w 76 | sed 's/^/    /'
+}
+
 echo "════════ dignify 서버 응답 측정 ════════"
 echo "대상   : $URL"
 echo "위치   : $(curl -s --max-time 5 https://ipinfo.io/city 2>/dev/null || echo '?'), $(curl -s --max-time 5 https://ipinfo.io/country 2>/dev/null || echo '?')"
@@ -50,6 +56,8 @@ awk '{print $1*1000}' "$TMP" | stats "TCP 접속(왕복 1회)"
 awk '{print $2*1000}' "$TMP" | stats "TLS 협상 완료까지"
 awk '{print $3*1000}' "$TMP" | stats "첫 바이트까지"
 awk '{print $4*1000}' "$TMP" | stats "전체"
+echo "  첫 바이트 원시값(ms):"
+awk '{print $3}' "$TMP" > "$TMP2".raw; raw "$TMP2".raw; rm -f "$TMP2".raw
 
 echo
 echo "[2] 연결을 재사용할 때 — 앱을 쓰는 중에 겪는 값"
@@ -58,7 +66,10 @@ for _ in $(seq "$N"); do
     curl -s "$URL" -o /dev/null -o /dev/null -w "%{time_total}\n" "$URL" >> "$TMP2"
 done
 awk '{print $1*1000}' "$TMP2" | stats "전체"
+echo "  원시값(ms):"
+raw "$TMP2"
 
 echo
 echo "참고: 이 중 서버가 실제로 일한 시간은 20~200ms이고, 나머지가 거리에서 오는 값이다."
+echo "     원시값이 두 덩어리로 갈리면 그것도 알려줄 것 — 평균만 보면 안 보인다."
 echo "════════════════════════════════════════"
