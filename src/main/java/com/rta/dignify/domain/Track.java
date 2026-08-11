@@ -29,6 +29,12 @@ public class Track extends BaseTimeEntity {
     @Column(name = "external_id", nullable = false)
     private String externalId;
 
+    // iTunes의 아티스트 id. 아티스트 단위로 곡을 묶으려면 이름이 아니라 이 값이 있어야 한다
+    // (동명이인이 실재하고, 한글명은 US 스토어프론트에서 로마자로 돌아온다).
+    // nullable인 이유: 이 컬럼이 생기기 전에 수집된 곡이 전부 null이다. 백필 전까지는 신규 수집분만 채워진다.
+    @Column(name = "artist_id")
+    private Long artistId;
+
     @Column(name = "artist_name", nullable = false, columnDefinition = "TEXT")
     private String artistName;
 
@@ -82,8 +88,9 @@ public class Track extends BaseTimeEntity {
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
 
-    private Track(String externalId, String artistName, String collectionName, String trackName, String previewUrl, String trackViewUrl, String artworkUrl, Instant releaseDate, Genre genre, String country, String source) {
+    private Track(String externalId, Long artistId, String artistName, String collectionName, String trackName, String previewUrl, String trackViewUrl, String artworkUrl, Instant releaseDate, Genre genre, String country, String source) {
         this.externalId = externalId;
+        this.artistId = artistId;
         this.artistName = artistName;
         this.collectionName = collectionName;
         this.trackName = trackName;
@@ -96,8 +103,10 @@ public class Track extends BaseTimeEntity {
         this.source = source;
     }
 
+    /// 테스트 픽스처용. artistId는 iTunes 응답에서만 오는 값이라 여기선 채우지 않는다 —
+    /// 필요한 테스트가 생기면 그때 인자로 받게 바꾸면 된다.
     public static Track create(String externalId, String artistName, String collectionName, String trackName, String previewUrl, String trackViewUrl, String artworkUrl, Instant releaseDate, Genre genre, String country, String source) {
-        return new Track(externalId, artistName, collectionName, trackName, previewUrl, trackViewUrl, artworkUrl, releaseDate, genre, country, source);
+        return new Track(externalId, null, artistName, collectionName, trackName, previewUrl, trackViewUrl, artworkUrl, releaseDate, genre, country, source);
     }
 
     private static boolean isKo(Locale locale) {
@@ -165,6 +174,7 @@ public class Track extends BaseTimeEntity {
         }
         return Optional.of(new Track(
                 String.valueOf(item.trackId()),
+                item.artistId(),
                 item.artistName(),
                 item.collectionName(),
                 item.trackName(),

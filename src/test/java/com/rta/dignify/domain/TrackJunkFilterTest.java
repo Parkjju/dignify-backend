@@ -31,4 +31,12 @@ class TrackJunkFilterTest {
         assertThat(Track.from(item("Queen", "A Night at the Opera", "Bohemian Rhapsody"), null)).isPresent();
         assertThat(Track.from(item("Radiohead", "OK Computer", "Karma Police"), null)).isPresent();
     }
+
+    /// artistId는 저장될 때 말고는 쓰이는 데가 없어서, 관통이 끊겨도 아무 화면도 안 깨진다.
+    /// 조용히 null로만 쌓이는 걸 막으려면 여기서 잡아야 한다.
+    @Test
+    void artistId_isCarriedFromItunes() {
+        Track track = Track.from(item("Queen", "A Night at the Opera", "Bohemian Rhapsody"), null).orElseThrow();
+        assertThat(track.getArtistId()).isEqualTo(2L);
+    }
 }
