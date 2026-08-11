@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.RequestBuilder;
@@ -16,6 +17,8 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+
+import static org.hamcrest.Matchers.not;
 
 @AutoConfigureMockMvc
 @SpringBootTest
@@ -43,6 +46,23 @@ public class JwtAuthenticationTest {
         mockMvc.perform(requestBuilder)
                 .andExpect(MockMvcResultMatchers.status().isUnauthorized())
                 .andExpect(MockMvcResultMatchers.jsonPath("$.code").value(invalidCode));
+    }
+
+    /**
+     * 로그인 엔드포인트가 permitAll에서 빠지면 필터가 먼저 막아버려, 로그인이 안 되는 원인이
+     * "토큰이 잘못됐다"로 보인다. 구글 로그인을 붙이며 실제로 밟은 함정이라 두 경로 모두 박아둔다.
+     * 여기서 검증하는 건 "필터를 통과했는가" 하나다 — 통과하면 토큰 검증 단계의 코드가 나온다.
+     */
+    @Test
+    @DisplayName("로그인 엔드포인트는 토큰 없이 필터를 통과한다")
+    void signInEndpointsArePermitted() throws Exception {
+        for (String path : new String[]{"/auth/apple", "/auth/google"}) {
+            mockMvc.perform(
+                    MockMvcRequestBuilders.post(path)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"identityToken\":\"garbage\",\"idToken\":\"garbage\"}")
+            ).andExpect(MockMvcResultMatchers.jsonPath("$.code").value(not(invalidCode)));
+        }
     }
 
     @Test
