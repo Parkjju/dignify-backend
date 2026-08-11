@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
 @RequiredArgsConstructor
@@ -69,15 +70,23 @@ public class FeedService {
     public CurationResponse getCurationFeed(Long userId) {
         List<Track> tracks = curationTrackRepository.findActiveOrdered().stream()
                 .map(CurationTrack::getTrack).toList();
+        List<Long> trackIds = tracks.stream().map(Track::getId).toList();
+        Set<Long> hyped = hypedTrackIds(userId, trackIds);
         List<FeedItem> items = tracks.stream()
-                .map(track -> FeedItem.from(track, isHyped(userId, track)))
+                .map(track -> FeedItem.from(track, hyped.contains(track.getId())))
                 .toList();
-        return CurationResponse.of(tracks.stream().map(Track::getId).toList(), items);
+        return CurationResponse.of(trackIds, items);
     }
 
-    /// 게스트(userId=null)는 하입 자체가 불가능하므로 조회하지 않는다.
-    private boolean isHyped(Long userId, Track track) {
-        return userId != null && userHypeTrackRepository.existsByUser_IdAndTrack_Id(userId, track.getId());
+    /// 이 트랙들 중 유저가 하입한 것의 id. 곡마다 따로 묻지 않고 한 번에 받는다.
+    ///
+    /// 게스트(userId=null)는 하입 자체가 불가능하므로 조회하지 않는다 — 예전엔 곡 수만큼
+    /// `existsBy...`를 돌았고, 게스트는 `WHERE user_id = null`이라 항상 false인 걸 열 번 물었다.
+    private Set<Long> hypedTrackIds(Long userId, List<Long> trackIds) {
+        if (userId == null || trackIds.isEmpty()) {
+            return Set.of();
+        }
+        return userHypeTrackRepository.findHypedTrackIds(userId, trackIds);
     }
 
     @Transactional(readOnly = true)
@@ -96,10 +105,10 @@ public class FeedService {
         // ponytail: 컬럼 쪽 REPLACE 대신 키워드만 손봄. 정규화 컬럼이 필요해지면 그때 추가.
         String normalizedKeyword = searchKeyword.replaceAll("['‘’ʼ]", "_");
         result = trackRepository.findTracksWithSearchKeyword(normalizedKeyword, FeedService.FETCH_LIMIT, currentCursor.genreOffset());
-        List<FeedItem> feedItems = result.stream().map((track) -> {
-            boolean isHyped = userHypeTrackRepository.existsByUser_IdAndTrack_Id(userId, track.getId());
-            return FeedItem.from(track, isHyped);
-        }).toList();
+        Set<Long> hyped = hypedTrackIds(userId, result.stream().map(Track::getId).toList());
+        List<FeedItem> feedItems = result.stream()
+                .map(track -> FeedItem.from(track, hyped.contains(track.getId())))
+                .toList();
 
         if (result.size() == FeedService.FETCH_LIMIT) {
             newCursor = new FeedCursor(currentCursor.phase(), currentCursor.genreOffset() + FeedService.FETCH_LIMIT, 0, currentCursor.seed());
