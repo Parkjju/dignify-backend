@@ -35,7 +35,10 @@ public class SecurityConfig {
             .httpBasic(AbstractHttpConfigurer::disable)
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                    .requestMatchers("/auth/apple", "/auth/refresh", "/internal/**", "/feed", "/feed/**").permitAll()
+                    // 로그인 엔드포인트는 당연히 토큰 없이 들어온다. 여기 빠뜨리면 컨트롤러까지
+                    // 가지도 못하고 필터가 AUTH_TOKEN_INVALID로 막아, 로그인이 안 되는 이유가
+                    // 토큰 검증 실패처럼 보인다(구글 로그인 추가하며 실제로 밟았다).
+                    .requestMatchers("/auth/apple", "/auth/google", "/auth/refresh", "/internal/**", "/feed", "/feed/**").permitAll()
                     .requestMatchers(HttpMethod.GET, "/picks", "/picks/*").permitAll()
                     .anyRequest().authenticated())
             .exceptionHandling(exception -> exception.authenticationEntryPoint(authenticationEntryPoint))
