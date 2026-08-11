@@ -35,6 +35,9 @@ public enum ErrorCode {
     AUTH_IDENTITY_TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED, "만료된 identity 토큰입니다."),
     AUTH_IDENTITY_TOKEN_ALGORITHM_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않은 identity 토큰 알고리즘입니다."),
     AUTH_REQUIRED(HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
+    // 구글 로그인은 이메일로 기존 계정을 찾아 연결하므로, 검증 안 된 이메일을 받으면
+    // 남의 계정에 붙을 수 있다. 그래서 연결이 아니라 로그인 자체를 거절한다.
+    AUTH_EMAIL_NOT_VERIFIED(HttpStatus.UNAUTHORIZED, "이메일이 검증되지 않은 계정입니다."),
 
     // Artist Request domain
     ARTIST_REQUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "등록 요청이 존재하지 않습니다."),

@@ -3,6 +3,7 @@ package com.rta.dignify.controller;
 import com.rta.dignify.dto.auth.AppleSignInRequest;
 import com.rta.dignify.dto.auth.AuthTokenRequest;
 import com.rta.dignify.dto.auth.AuthTokenResponse;
+import com.rta.dignify.dto.auth.GoogleSignInRequest;
 import com.rta.dignify.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,11 @@ public class AuthController {
     @PostMapping("/apple")
     public AuthTokenResponse signInWithApple(@RequestBody @Valid AppleSignInRequest appleSignInRequest) {
         return authService.signInWithApple(appleSignInRequest.identityToken());
+    }
+
+    @PostMapping("/google")
+    public AuthTokenResponse signInWithGoogle(@RequestBody @Valid GoogleSignInRequest googleSignInRequest) {
+        return authService.signInWithGoogle(googleSignInRequest.idToken());
     }
 
     @PostMapping("/refresh")
