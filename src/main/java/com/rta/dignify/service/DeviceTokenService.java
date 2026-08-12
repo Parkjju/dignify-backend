@@ -23,12 +23,12 @@ public class DeviceTokenService {
     private final UserRepository userRepository;
 
     @Transactional
-    public void register(Long userId, String token, String environment, String timeZone, String userAgent) {
+    public void register(Long userId, String token, String environment, String platform, String timeZone, String userAgent) {
         User user = userRepository.getReferenceById(userId);
         Integer appBuild = parseAppBuild(userAgent);
         userDeviceTokenRepository.findByToken(token).ifPresentOrElse(
-                existing -> existing.reassign(user, environment, timeZone, appBuild),
-                () -> userDeviceTokenRepository.save(UserDeviceToken.create(user, token, environment, timeZone, appBuild))
+                existing -> existing.reassign(user, environment, platform, timeZone, appBuild),
+                () -> userDeviceTokenRepository.save(UserDeviceToken.create(user, token, environment, platform, timeZone, appBuild))
         );
     }
 

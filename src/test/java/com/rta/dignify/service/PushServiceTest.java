@@ -45,26 +45,55 @@ class PushServiceTest {
     @DisplayName("아티스트 추가 푸시 — 문구를 안 주면 본문은 loc-key로 나간다")
     void artistAddedUsesLocKeyByDefault() {
         for (String note : new String[]{null, "", "  "}) {
-            String payload = PushService.artistAddedPayload("Radiohead", note);
-            assertThat(payload).contains("push_artist_added_body");
-            assertThat(payload).contains("push_artist_added_title", "Radiohead");
+            PushService.Alert alert = PushService.artistAddedAlert("Radiohead", note);
+
+            assertThat(alert.title().key()).isEqualTo("push_artist_added_title");
+            assertThat(alert.title().arg()).isEqualTo("Radiohead");
+            assertThat(alert.body().key()).isEqualTo("push_artist_added_body");
+            assertThat(alert.body().text()).isNull();
         }
     }
 
     @Test
     @DisplayName("아티스트 추가 푸시 — 문구를 주면 본문만 그 문구로 바뀐다")
     void artistAddedUsesNoteAsBody() {
-        String payload = PushService.artistAddedPayload("Radiohead", "일부 앨범만 올라왔어요");
+        PushService.Alert alert = PushService.artistAddedAlert("Radiohead", "일부 앨범만 올라왔어요");
 
-        assertThat(payload).contains("일부 앨범만 올라왔어요");
-        assertThat(payload).doesNotContain("push_artist_added_body");
-        assertThat(payload).contains("push_artist_added_title");   // 제목은 그대로 기기 언어
+        assertThat(alert.body().text()).isEqualTo("일부 앨범만 올라왔어요");
+        assertThat(alert.body().key()).isNull();
+        assertThat(alert.title().key()).isEqualTo("push_artist_added_title");   // 제목은 그대로 기기 언어
     }
 
     @Test
     @DisplayName("반응 푸시 — 첫 반응은 닉네임을 본문에 담는다 (title은 한 줄이라 잘린다)")
     void pickReactionFirstNamesTheReactor() {
-        String payload = PushService.pickReactionPayload("digger_kim", 1);
+        PushService.Alert alert = PushService.pickReactionAlert("digger_kim", 1);
+
+        assertThat(alert.title().key()).isEqualTo("push_pick_reaction_first_title");
+        assertThat(alert.title().arg()).isNull();
+        assertThat(alert.body().key()).isEqualTo("push_pick_reaction_first");
+        assertThat(alert.body().arg()).isEqualTo("digger_kim");
+    }
+
+    @Test
+    @DisplayName("반응 푸시 — 여럿이면 이름 대신 개수. 한 명만 대면 나머지가 지워진다")
+    void pickReactionMilestoneCountsInstead() {
+        PushService.Alert alert = PushService.pickReactionAlert("digger_kim", 5);
+
+        assertThat(alert.title().key()).isEqualTo("push_pick_reaction_milestone_title");
+        assertThat(alert.body().key()).isEqualTo("push_pick_reaction_milestone");
+        assertThat(alert.body().arg()).isEqualTo("5");
+    }
+
+    /// 문구 분기는 위에서 다 봤으니, 여기선 그게 실제 APNs 페이로드까지 살아 나오는지만 본다.
+    ///
+    /// ponytail: FCM 쪽 대응 테스트는 없다 — firebase-admin의 `Message`/`AndroidNotification`은
+    /// getter가 없어 조립 결과를 들여다볼 수가 없다. 두 렌더러가 같은 `Line`을 읽는 평평한
+    /// 필드 매핑이라 분기 테스트가 양쪽을 같이 지킨다.
+    @Test
+    @DisplayName("APNs 페이로드 — loc-key와 인자가 그대로 실린다")
+    void apnsPayloadCarriesLocKeys() {
+        String payload = PushService.apnsPayload(PushService.pickReactionAlert("digger_kim", 1));
 
         assertThat(payload).contains("push_pick_reaction_first_title");
         assertThat(payload).contains("push_pick_reaction_first", "digger_kim");
@@ -72,13 +101,12 @@ class PushServiceTest {
     }
 
     @Test
-    @DisplayName("반응 푸시 — 여럿이면 이름 대신 개수. 한 명만 대면 나머지가 지워진다")
-    void pickReactionMilestoneCountsInstead() {
-        String payload = PushService.pickReactionPayload("digger_kim", 5);
+    @DisplayName("APNs 페이로드 — 공지 푸시는 원문이 그대로 나간다")
+    void apnsPayloadCarriesRawText() {
+        String payload = PushService.apnsPayload(
+                new PushService.Alert(PushService.Line.raw("제목"), PushService.Line.raw("본문")));
 
-        assertThat(payload).contains("push_pick_reaction_milestone_title");
-        assertThat(payload).contains("push_pick_reaction_milestone", "5");
-        assertThat(payload).doesNotContain("digger_kim");
+        assertThat(payload).contains("제목", "본문");
     }
 
     @Test

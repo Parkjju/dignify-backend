@@ -34,6 +34,9 @@ dependencies {
 	// Apple push notification
 	implementation 'com.eatthepath:pushy:0.15.6'
 
+	// Android push notification (FCM). APNs와 달리 SDK 없이는 인증(OAuth2)부터 직접 짜야 한다.
+	implementation 'com.google.firebase:firebase-admin:9.4.1'
+
 	// Cloud SQL (Cloud Run → Cloud SQL Unix socket 연결)
 	implementation 'com.google.cloud.sql:postgres-socket-factory:1.14.0'
 

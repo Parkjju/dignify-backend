@@ -4,9 +4,18 @@ import com.eatthepath.pushy.apns.ApnsClient;
 import com.eatthepath.pushy.apns.util.ApnsPayloadBuilder;
 import com.eatthepath.pushy.apns.util.SimpleApnsPayloadBuilder;
 import com.eatthepath.pushy.apns.util.SimpleApnsPushNotification;
+import com.google.api.core.ApiFutureCallback;
+import com.google.api.core.ApiFutures;
+import com.google.firebase.messaging.AndroidConfig;
+import com.google.firebase.messaging.AndroidNotification;
+import com.google.firebase.messaging.FirebaseMessaging;
+import com.google.firebase.messaging.FirebaseMessagingException;
+import com.google.firebase.messaging.Message;
+import com.google.firebase.messaging.MessagingErrorCode;
 import com.rta.dignify.domain.UserDeviceToken;
 import com.rta.dignify.repository.UserDeviceTokenRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -27,32 +36,50 @@ public class PushService {
 
     private final ApnsClient sandboxApns;
     private final ApnsClient productionApns;
+    /// FCM은 없을 수 있다(fcm.enabled=false). 없으면 안드로이드 토큰만 건너뛰고 iOS 발송은
+    /// 그대로 나간다 — 그래서 필수 의존이 아니라 ObjectProvider다.
+    private final ObjectProvider<FirebaseMessaging> fcm;
     private final UserDeviceTokenRepository tokenRepository;
 
     @Value("${apns.bundle-id}") String bundleId;
+
+    /// 알림 문구 한 줄. `key`가 있으면 **기기가** 자기 언어로 렌더하고(APNs `loc-key` =
+    /// FCM `title_loc_key`), `text`면 서버가 쓴 원문이 그대로 나간다.
+    ///
+    /// 문구를 발송 경로에서 떼어낸 이유는 경로가 둘(APNs/FCM)이기 때문이다. 붙여두면
+    /// "note가 있으면 본문만 바꾼다", "1명일 때만 이름을 댄다" 같은 분기가 양쪽에 복사되고
+    /// 한쪽만 고치는 날이 반드시 온다.
+    record Line(String key, String arg, String text) {
+        static Line loc(String key) { return new Line(key, null, null); }
+
+        static Line loc(String key, String arg) { return new Line(key, arg, null); }
+
+        static Line raw(String text) { return new Line(null, null, text); }
+
+        /// 인자는 있어야 하나뿐이다. APNs·FCM 둘 다 배열로 받아 형태를 맞춰둔다.
+        String[] args() { return arg == null ? new String[0] : new String[]{arg}; }
+    }
+
+    /// 알림 한 건 = 제목 + 본문. 무엇을 말할지는 여기까지고, 어떻게 보낼지는 렌더러가 맡는다.
+    record Alert(Line title, Line body) { }
 
     /// 요청한 아티스트가 추가됐음을 알린다. 문구는 loc-key로 보내고 앱이 기기 언어로 렌더한다.
     ///
     /// note를 주면 본문만 그 문구로 바뀐다("일부 앨범만 올라왔어요" 같은 안내). 번역은 안 되니
     /// 보내는 사람이 유저 언어를 보고 써야 한다. 제목은 그대로 loc-key라 기기 언어로 나온다.
     public void sendArtistAdded(Long userId, String artistName, String note) {
-        String payload = artistAddedPayload(artistName, note);
+        Alert alert = artistAddedAlert(artistName, note);
 
         for (UserDeviceToken t : tokenRepository.findByUserId(userId)) {
-            send(t, payload);
+            send(t, alert);
         }
     }
 
-    static String artistAddedPayload(String artistName, String note) {
-        ApnsPayloadBuilder builder = new SimpleApnsPayloadBuilder()
-                .setLocalizedAlertTitle("push_artist_added_title", artistName)  // title-loc-key + args(%@=아티스트명)
-                .setSound(SimpleApnsPayloadBuilder.DEFAULT_SOUND_FILENAME);
-        if (note == null || note.isBlank()) {
-            builder.setLocalizedAlertMessage("push_artist_added_body");         // loc-key
-        } else {
-            builder.setAlertBody(note);
-        }
-        return builder.build();
+    static Alert artistAddedAlert(String artistName, String note) {
+        Line body = (note == null || note.isBlank())
+                ? Line.loc("push_artist_added_body")
+                : Line.raw(note);
+        return new Alert(Line.loc("push_artist_added_title", artistName), body);   // %@ = 아티스트명
     }
 
     /// 내 픽에 반응이 마일스톤에 닿았음을 알린다(§10.5). 발송 여부 판정은 `PickService`가 한다.
@@ -64,10 +91,10 @@ public class PushService {
     /// ⚠️ `broadcast`의 시간대 필터를 여기 걸지 않는다. 그건 전체 발송용이고, 개별 반응 푸시에
     /// 걸면 `time_zone`이 null인 기기가 통째로 잘려 조용히 아무것도 안 간다.
     public void sendPickReaction(Long ownerId, String reactorNickname, long count) {
-        String payload = pickReactionPayload(reactorNickname, count);
+        Alert alert = pickReactionAlert(reactorNickname, count);
 
         for (UserDeviceToken t : tokenRepository.findByUserId(ownerId)) {
-            send(t, payload);
+            send(t, alert);
         }
     }
 
@@ -78,15 +105,12 @@ public class PushService {
     /// 펼치면 전부 보인다. 그래서 title은 인자 없는 고정 문구다.
     ///
     /// 본문에 "보러 가기" 같은 유도 문구는 안 넣는다 — 딥링크가 없어 탭해도 그 픽으로 못 간다.
-    static String pickReactionPayload(String reactorNickname, long count) {
-        String titleKey = count == 1 ? "push_pick_reaction_first_title" : "push_pick_reaction_milestone_title";
-        String bodyKey = count == 1 ? "push_pick_reaction_first" : "push_pick_reaction_milestone";
-        String arg = count == 1 ? reactorNickname : String.valueOf(count);
-        return new SimpleApnsPayloadBuilder()
-                .setLocalizedAlertTitle(titleKey)        // 인자 없는 고정 제목
-                .setLocalizedAlertMessage(bodyKey, arg)  // sendArtistAdded가 이미 쓰는 방식
-                .setSound(SimpleApnsPayloadBuilder.DEFAULT_SOUND_FILENAME)
-                .build();
+    static Alert pickReactionAlert(String reactorNickname, long count) {
+        return count == 1
+                ? new Alert(Line.loc("push_pick_reaction_first_title"),
+                            Line.loc("push_pick_reaction_first", reactorNickname))
+                : new Alert(Line.loc("push_pick_reaction_milestone_title"),
+                            Line.loc("push_pick_reaction_milestone", String.valueOf(count)));
     }
 
     /// 운영자가 손으로 쏘는 공지 푸시(run-cron.sh push). 발송 대수를 돌려준다.
@@ -104,11 +128,7 @@ public class PushService {
     /// 눌러도 그 화면이 없어서다. 빌드를 아직 모르는 기기(app_build null)는 구버전으로 치고 뺀다 —
     /// 앱을 한 번 켜야 채워지는 값이라, 확실할 때만 보내는 쪽이 맞다.
     public int broadcast(String title, String body, boolean force, Long userId, Integer minBuild) {
-        String payload = new SimpleApnsPayloadBuilder()
-                .setAlertTitle(title)
-                .setAlertBody(body)
-                .setSound(SimpleApnsPayloadBuilder.DEFAULT_SOUND_FILENAME)
-                .build();
+        Alert alert = new Alert(Line.raw(title), Line.raw(body));
 
         List<UserDeviceToken> targets = userId == null
                 ? tokenRepository.findAll()
@@ -118,21 +138,94 @@ public class PushService {
         for (UserDeviceToken t : targets) {
             if (!meetsMinBuild(t.getAppBuild(), minBuild)) continue;
             if (userId == null && !force && !isAwakeHour(t.getTimeZone(), Instant.now())) continue;
-            send(t, payload);
+            send(t, alert);
             sent++;
         }
         return sent;
     }
 
-    /// 토큰 하나에 발송. APNs가 만료 토큰이라고 답하면 그 자리에서 지운다.
-    private void send(UserDeviceToken t, String payload) {
+    /// 토큰 하나에 발송. 어느 경로로 갈지는 토큰이 안다(`isAndroid`).
+    private void send(UserDeviceToken t, Alert alert) {
+        if (t.isAndroid()) {
+            sendFcm(t, alert);
+        } else {
+            sendApns(t, alert);
+        }
+    }
+
+    /// APNs 발송. 만료 토큰이라고 답하면 그 자리에서 지운다.
+    private void sendApns(UserDeviceToken t, Alert alert) {
         ApnsClient client = "production".equals(t.getEnvironment()) ? productionApns : sandboxApns;
-        var push = new SimpleApnsPushNotification(t.getToken(), bundleId, payload);
+        var push = new SimpleApnsPushNotification(t.getToken(), bundleId, apnsPayload(alert));
         client.sendNotification(push).whenComplete((res, err) -> {
             if (err == null && !res.isAccepted() && res.getTokenInvalidationTimestamp().isPresent()) {
                 tokenRepository.deleteById(t.getId());   // deleteById 자체가 트랜잭션
             }
         });
+    }
+
+    /// FCM 발송. APNs와 마찬가지로 **논블로킹이어야 한다** — 반응 푸시는 유저 요청을 처리하는
+    /// 중에 불리므로, 여기서 응답을 기다리면 반응을 누를 때마다 그만큼 느려진다.
+    ///
+    /// UNREGISTERED는 앱이 지워졌거나 토큰이 회전된 경우로, APNs의 만료 토큰과 같은 자리라 지운다.
+    /// 그 외 실패(일시적 네트워크·쿼터)는 두고 다음 발송에서 다시 시도한다.
+    private void sendFcm(UserDeviceToken t, Alert alert) {
+        FirebaseMessaging messaging = fcm.getIfAvailable();
+        if (messaging == null) return;   // fcm.enabled=false — 안드로이드 발송만 조용히 꺼진다
+
+        ApiFutures.addCallback(messaging.sendAsync(fcmMessage(t.getToken(), alert)),
+                new ApiFutureCallback<String>() {
+                    @Override public void onSuccess(String messageId) { }
+
+                    @Override public void onFailure(Throwable err) {
+                        if (err instanceof FirebaseMessagingException e
+                                && e.getMessagingErrorCode() == MessagingErrorCode.UNREGISTERED) {
+                            tokenRepository.deleteById(t.getId());
+                        }
+                    }
+                }, Runnable::run);
+    }
+
+    static String apnsPayload(Alert alert) {
+        ApnsPayloadBuilder builder = new SimpleApnsPayloadBuilder()
+                .setSound(SimpleApnsPayloadBuilder.DEFAULT_SOUND_FILENAME);
+
+        if (alert.title().key() != null) {
+            builder.setLocalizedAlertTitle(alert.title().key(), alert.title().args());
+        } else {
+            builder.setAlertTitle(alert.title().text());
+        }
+        if (alert.body().key() != null) {
+            builder.setLocalizedAlertMessage(alert.body().key(), alert.body().args());
+        } else {
+            builder.setAlertBody(alert.body().text());
+        }
+        return builder.build();
+    }
+
+    /// 문구를 `android.notification`에만 싣는다. 최상위 `notification`은 제목·본문을 문자열로
+    /// 요구해서 loc-key를 실을 자리가 없다 — 안드로이드 전용 블록에 넣어야 기기가 strings.xml에서
+    /// 자기 언어로 꺼내 쓴다(그래서 키 이름이 리소스 이름과 같아야 한다).
+    static Message fcmMessage(String token, Alert alert) {
+        AndroidNotification.Builder notification = AndroidNotification.builder().setSound("default");
+
+        if (alert.title().key() != null) {
+            notification.setTitleLocalizationKey(alert.title().key());
+            for (String arg : alert.title().args()) notification.addTitleLocalizationArg(arg);
+        } else {
+            notification.setTitle(alert.title().text());
+        }
+        if (alert.body().key() != null) {
+            notification.setBodyLocalizationKey(alert.body().key());
+            for (String arg : alert.body().args()) notification.addBodyLocalizationArg(arg);
+        } else {
+            notification.setBody(alert.body().text());
+        }
+
+        return Message.builder()
+                .setToken(token)
+                .setAndroidConfig(AndroidConfig.builder().setNotification(notification.build()).build())
+                .build();
     }
 
     /// minBuild가 없으면 전부 통과. 있으면 빌드를 아는 기기만, 그중 기준 이상만 통과한다.

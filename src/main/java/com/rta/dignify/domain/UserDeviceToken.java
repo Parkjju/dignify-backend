@@ -38,27 +38,42 @@ public class UserDeviceToken extends BaseTimeEntity {
     @Column(name = "app_build")
     private Integer appBuild;
 
-    private UserDeviceToken(User user, String token, String environment, String timeZone, Integer appBuild) {
+    /// 발송 경로를 가른다 — "android"면 FCM, 그 외(null 포함)는 APNs.
+    /// **nullable인 게 중요하다**: 이미 심사 통과해 배포된 iOS 앱은 이 필드를 안 보내고,
+    /// 기존 row도 전부 값이 없다. null을 iOS로 치면 그 둘이 그대로 계속 동작한다.
+    @Column(length = 10)
+    private String platform;
+
+    private UserDeviceToken(User user, String token, String environment, String platform, String timeZone, Integer appBuild) {
         this.user = user;
         this.token = token;
         this.environment = environment;
+        this.platform = platform;
         this.timeZone = timeZone;
         this.appBuild = appBuild;
     }
 
-    public static UserDeviceToken create(User user, String token, String environment, String timeZone, Integer appBuild) {
-        return new UserDeviceToken(user, token, environment, timeZone, appBuild);
+    public static UserDeviceToken create(User user, String token, String environment, String platform, String timeZone, Integer appBuild) {
+        return new UserDeviceToken(user, token, environment, platform, timeZone, appBuild);
     }
 
-    /// 재등록 시 타임존이나 빌드가 비어 오면(구버전 앱, UA 파싱 실패) 기존 값을 지우지 않는다.
-    public void reassign(User user, String environment, String timeZone, Integer appBuild) {
+    /// 재등록 시 타임존·빌드·플랫폼이 비어 오면(구버전 앱, UA 파싱 실패) 기존 값을 지우지 않는다.
+    public void reassign(User user, String environment, String platform, String timeZone, Integer appBuild) {
         this.user = user;
         this.environment = environment;
+        if (platform != null && !platform.isBlank()) {
+            this.platform = platform;
+        }
         if (timeZone != null && !timeZone.isBlank()) {
             this.timeZone = timeZone;
         }
         if (appBuild != null) {
             this.appBuild = appBuild;
         }
+    }
+
+    /// 발송 경로 판정은 여기 한 곳에서만 한다 — null=iOS 규칙이 흩어지면 한쪽만 고치게 된다.
+    public boolean isAndroid() {
+        return "android".equalsIgnoreCase(platform);
     }
 }
