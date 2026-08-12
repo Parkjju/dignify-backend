@@ -117,6 +117,38 @@ public class DeviceTokenServiceTest {
         assertThat(userDeviceTokenRepository.findByToken("token-abc").orElseThrow().isAndroid()).isTrue();
     }
 
+    @Test
+    @DisplayName("같은 기기가 새 토큰으로 등록 — 옛 토큰은 그 자리에서 지워진다")
+    void newTokenEvictsOldOneOnSamePlatform() {
+        deviceTokenService.register(user.getId(), "token-old", "production", "android", "Asia/Seoul", null);
+        deviceTokenService.register(user.getId(), "token-new", "production", "android", "Asia/Seoul", null);
+
+        assertThat(userDeviceTokenRepository.findByUserId(user.getId()))
+                .extracting(UserDeviceToken::getToken)
+                .containsExactly("token-new");
+    }
+
+    @Test
+    @DisplayName("아이폰과 안드로이드를 같이 쓰면 둘 다 남는다 — 플랫폼이 다르면 안 지운다")
+    void keepsTokensOnOtherPlatform() {
+        deviceTokenService.register(user.getId(), "token-ios", "production", null, "Asia/Seoul", UA_12);
+        deviceTokenService.register(user.getId(), "token-and", "production", "android", "Asia/Seoul", null);
+
+        assertThat(userDeviceTokenRepository.findByUserId(user.getId()))
+                .extracting(UserDeviceToken::getToken)
+                .containsExactlyInAnyOrder("token-ios", "token-and");
+    }
+
+    @Test
+    @DisplayName("남의 토큰은 안 건드린다 — 정리는 그 유저 범위 안에서만")
+    void doesNotEvictAnotherUsersToken() {
+        User other = userRepository.save(User.create("other@gmail.com", "other"));
+        deviceTokenService.register(other.getId(), "token-other", "production", "android", "Asia/Seoul", null);
+        deviceTokenService.register(user.getId(), "token-mine", "production", "android", "Asia/Seoul", null);
+
+        assertThat(userDeviceTokenRepository.findByToken("token-other")).isPresent();
+    }
+
     @BeforeEach
     void setUp() {
         user = userRepository.save(User.create("test@gmail.com", "nickname"));
