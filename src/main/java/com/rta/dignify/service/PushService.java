@@ -15,6 +15,7 @@ import com.google.firebase.messaging.MessagingErrorCode;
 import com.rta.dignify.domain.UserDeviceToken;
 import com.rta.dignify.repository.UserDeviceTokenRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -29,6 +30,7 @@ import java.util.List;
 // apns.enabled=true(프로덕션)일 때만 로드. 테스트/로컬엔 APNs 키가 없어 빈을 안 띄운다.
 @ConditionalOnProperty(name = "apns.enabled", havingValue = "true")
 @RequiredArgsConstructor
+@Slf4j
 @Service
 public class PushService {
     /// 발송 허용 시간대(기기 로컬 기준). 밖이면 건너뛴다.
@@ -171,15 +173,26 @@ public class PushService {
     /// 그 외 실패(일시적 네트워크·쿼터)는 두고 다음 발송에서 다시 시도한다.
     private void sendFcm(UserDeviceToken t, Alert alert) {
         FirebaseMessaging messaging = fcm.getIfAvailable();
-        if (messaging == null) return;   // fcm.enabled=false — 안드로이드 발송만 조용히 꺼진다
+        if (messaging == null) {
+            // 여기서 조용히 빠지면 "보냈다고 나오는데 안 온다"가 된다. broadcast는 이걸 발송
+            // 대수에 세고 있어서 호출부에서도 구별이 안 간다.
+            log.warn("FCM 미설정(fcm.enabled=false)이라 안드로이드 기기 {}를 건너뛴다", t.getId());
+            return;
+        }
 
         ApiFutures.addCallback(messaging.sendAsync(fcmMessage(t.getToken(), alert)),
                 new ApiFutureCallback<String>() {
-                    @Override public void onSuccess(String messageId) { }
+                    @Override public void onSuccess(String messageId) {
+                        log.info("FCM 발송 성공 tokenId={} messageId={}", t.getId(), messageId);
+                    }
 
                     @Override public void onFailure(Throwable err) {
-                        if (err instanceof FirebaseMessagingException e
-                                && e.getMessagingErrorCode() == MessagingErrorCode.UNREGISTERED) {
+                        MessagingErrorCode code = err instanceof FirebaseMessagingException e
+                                ? e.getMessagingErrorCode() : null;
+                        // 남은 것 전부를 남긴다. FCM 실패는 유저 요청 밖(콜백)에서 나므로
+                        // 여기서 안 찍으면 어디에도 흔적이 없다.
+                        log.warn("FCM 발송 실패 tokenId={} code={}", t.getId(), code, err);
+                        if (code == MessagingErrorCode.UNREGISTERED) {
                             tokenRepository.deleteById(t.getId());
                         }
                     }
