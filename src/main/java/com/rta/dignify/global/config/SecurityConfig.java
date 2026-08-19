@@ -42,7 +42,7 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.GET, "/picks", "/picks/*").permitAll()
                     .anyRequest().authenticated())
             .exceptionHandling(exception -> exception.authenticationEntryPoint(authenticationEntryPoint))
-            .addFilterBefore(new JwtAuthenticationFilter(jwtProvider), UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(new JwtAuthenticationFilter(jwtProvider, authenticationEntryPoint), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

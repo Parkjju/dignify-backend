@@ -90,6 +90,34 @@ public class JwtAuthenticationTest {
                 .andExpect(MockMvcResultMatchers.jsonPath("$.code").value(expiredCode));
     }
 
+    /**
+     * permitAll 경로에서 만료 토큰이 조용히 통과하던 버그의 회귀 방지.
+     * 통과하면 컨트롤러가 userId=null로 돌아 로그인한 유저가 200과 함께 게스트 응답을 받고
+     * (픽의 myReaction·isMine, 피드의 isHyped가 전부 비어서 내려온다),
+     * 401이 안 나가니 클라가 토큰을 갱신할 계기조차 못 얻는다.
+     */
+    @Test
+    @DisplayName("permitAll 경로도 만료된 토큰이면 401")
+    void expiredTokenOnPublicEndpoint() throws Exception {
+        setReflectionFields(true);
+        String expiredToken = jwtProvider.generateAccessToken(1L);
+        mockMvc.perform(MockMvcRequestBuilders.get("/picks")
+                        .header("Authorization", "Bearer " + expiredToken))
+                .andExpect(MockMvcResultMatchers.status().isUnauthorized())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.code").value(expiredCode));
+    }
+
+    /**
+     * 위 401이 게스트까지 막으면 안 된다 — Authorization 헤더가 아예 없으면 검증할 토큰도 없다.
+     * 게스트 브라우징은 App Store 5.1.1(v) 리젝을 푼 경로라 죽으면 안 된다.
+     */
+    @Test
+    @DisplayName("permitAll 경로는 토큰이 없으면 그대로 통과")
+    void noTokenOnPublicEndpoint() throws Exception {
+        mockMvc.perform(MockMvcRequestBuilders.get("/picks"))
+                .andExpect(MockMvcResultMatchers.status().isOk());
+    }
+
     @Test
     @DisplayName("API 정상 요청")
     void requestWithNormalToken() throws Exception {
