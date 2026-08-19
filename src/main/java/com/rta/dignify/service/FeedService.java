@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -103,7 +104,7 @@ public class FeedService {
 
         // DB에 ASCII(')와 커브(’) 따옴표가 섞여 있어서, 어느 쪽으로 쳐도 걸리게 LIKE 단일문자 와일드카드로 치환한다.
         // ponytail: 컬럼 쪽 REPLACE 대신 키워드만 손봄. 정규화 컬럼이 필요해지면 그때 추가.
-        String normalizedKeyword = searchKeyword.replaceAll("['‘’ʼ]", "_");
+        String normalizedKeyword = foldAccents(searchKeyword).replaceAll("['‘’ʼ]", "_");
         result = trackRepository.findTracksWithSearchKeyword(normalizedKeyword, FeedService.FETCH_LIMIT, currentCursor.genreOffset());
         Set<Long> hyped = hypedTrackIds(userId, result.stream().map(Track::getId).toList());
         List<FeedItem> feedItems = result.stream()
@@ -118,5 +119,17 @@ public class FeedService {
         }
 
         return response;
+    }
+
+    /// 쿼리가 컬럼에 거는 LOWER + translate를 검색어에도 똑같이 걸어 "rosalia"가 "ROSALÍA"에 닿게 한다.
+    /// 표는 TrackRepository 것을 그대로 써야 양쪽이 어긋나지 않는다.
+    private static String foldAccents(String keyword) {
+        String lowered = keyword.toLowerCase(Locale.ROOT);
+        StringBuilder folded = new StringBuilder(lowered.length());
+        for (char c : lowered.toCharArray()) {
+            int i = TrackRepository.FOLD_FROM.indexOf(c);
+            folded.append(i < 0 ? c : TrackRepository.FOLD_TO.charAt(i));
+        }
+        return folded.toString();
     }
 }

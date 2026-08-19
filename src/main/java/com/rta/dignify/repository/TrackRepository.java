@@ -33,16 +33,26 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
             "OFFSET :offset", nativeQuery = true)
     List<Track> findGeneralTracksByGenreIdsExceptHypedTrackWithLimitAndOffset(@Param("userId") Long userId, @Param("limit") Integer limit, @Param("offset") Integer offset, @Param("seed") Integer seed);
 
+    /// 검색어와 컬럼 양쪽에서 라틴 발음기호를 뗀다. "rosalia"로 쳐도 "ROSALÍA"가 걸리게.
+    /// 자바 쪽(FeedService.foldAccents)이 같은 표를 그대로 쓰므로 양쪽 결과가 항상 일치한다.
+    /// ponytail: unaccent 확장 대신 기본 함수 translate. 확장은 로컬/CI/운영 DB에 각각 손으로
+    /// 깔아야 하고 운영 계정 권한도 확인 안 됐다. 1:1 치환이라 ß→ss 같은 확장은 안 된다.
+    String FOLD_FROM = "àáâãäåèéêëìíîïòóôõöøùúûüýÿñçšžğıāēīōūąęćčńłśźżřđ";
+    String FOLD_TO = "aaaaaaeeeeiiiioooooouuuuyyncszgiaeiouaeccnlszzrd";
+    /// CAST가 없으면 Hibernate가 FUNCTION()의 반환형을 Object로 봐서 LIKE 좌변으로 못 쓴다.
+    String ARTIST = "CAST(FUNCTION('translate', LOWER(t.artistName), '" + FOLD_FROM + "', '" + FOLD_TO + "') AS String)";
+    String TRACK = "CAST(FUNCTION('translate', LOWER(t.trackName), '" + FOLD_FROM + "', '" + FOLD_TO + "') AS String)";
+
     @Query(value = "SELECT t FROM Track t " +
-            "WHERE (LOWER(t.artistName) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) OR LOWER(t.trackName) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) " +
+            "WHERE (" + ARTIST + " LIKE LOWER(CONCAT('%', :searchKeyword, '%')) OR " + TRACK + " LIKE LOWER(CONCAT('%', :searchKeyword, '%')) " +
             "OR LOWER(t.artistNameKo) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) OR LOWER(t.trackNameKo) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) ) AND t.isActive = TRUE " +
             // 관련도 티어를 1차, 아티스트명을 2차 정렬키로 둬서 같은 아티스트 곡을 한 덩어리로 모은다.
             // 정확 매칭 아티스트가 top 클러스터, 그다음 접두/포함 순. 트랙명만 걸린 건 맨 아래.
             "ORDER BY " +
             "CASE " +
-            "WHEN LOWER(t.artistName) = LOWER(:searchKeyword) OR LOWER(t.artistNameKo) = LOWER(:searchKeyword) THEN 0 " +
-            "WHEN LOWER(t.artistName) LIKE LOWER(CONCAT(:searchKeyword, '%')) OR LOWER(t.artistNameKo) LIKE LOWER(CONCAT(:searchKeyword, '%')) THEN 1 " +
-            "WHEN LOWER(t.artistName) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) OR LOWER(t.artistNameKo) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) THEN 2 " +
+            "WHEN " + ARTIST + " = LOWER(:searchKeyword) OR LOWER(t.artistNameKo) = LOWER(:searchKeyword) THEN 0 " +
+            "WHEN " + ARTIST + " LIKE LOWER(CONCAT(:searchKeyword, '%')) OR LOWER(t.artistNameKo) LIKE LOWER(CONCAT(:searchKeyword, '%')) THEN 1 " +
+            "WHEN " + ARTIST + " LIKE LOWER(CONCAT('%', :searchKeyword, '%')) OR LOWER(t.artistNameKo) LIKE LOWER(CONCAT('%', :searchKeyword, '%')) THEN 2 " +
             "ELSE 3 END, " +
             "LOWER(t.artistName), " +
             "t.id " +

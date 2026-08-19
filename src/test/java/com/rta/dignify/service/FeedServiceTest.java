@@ -246,6 +246,20 @@ public class FeedServiceTest {
     }
 
     @Test
+    @DisplayName("발음기호가 붙은 아티스트를 ASCII로 쳐도 찾는다")
+    void searchFoldsAccentsTest() {
+        Track rosalia = Track.create("rosalia-1", "ROSALÍA", "El Mal Querer", "MALAMENTE",
+                "https://ex/p.mp3", "https://ex/v", "https://ex/a.jpg", Instant.now(), rockGenre, "US", "ITUNES");
+        entityManager.persistAndFlush(rosalia);
+
+        // 검색어 쪽(자바)과 컬럼 쪽(SQL translate) 어느 한쪽만 접히면 여기서 깨진다.
+        for (String keyword : List.of("rosalia", "ROSALIA", "rosalía")) {
+            assertThat(feedService.searchFeedList(user.getId(), null, keyword).items())
+                    .extracting(FeedItem::trackId).contains(rosalia.getId());
+        }
+    }
+
+    @Test
     @DisplayName("""
             1. genreName은 로케일을 따라가고 genreNameEn은 따라가지 않는다
             """)
