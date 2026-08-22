@@ -86,6 +86,25 @@ public class ITunesAPIClient {
                 .toList();
     }
 
+    // US 스토어프론트로 트랙 id들을 조회한다. artistId 백필용 — 우리 카탈로그가 US 기준으로
+    // 수집돼서, KR로 물으면 KR 스토어에 없는 곡이 통째로 빠진다.
+    public List<ItunesItem> lookupSongsByTrackIds(List<String> trackIds) {
+        String ids = String.join(",", trackIds);
+
+        ItunesLookupResponse response = restClient.get()
+                .uri("/lookup?id={ids}&entity=song&country=US", ids)
+                .retrieve()
+                .body(ItunesLookupResponse.class);
+
+        if (response == null || response.results() == null) {
+            return List.of();
+        }
+
+        return response.results().stream()
+                .filter(item -> "track".equals(item.wrapperType()))
+                .toList();
+    }
+
     // KR 스토어프론트로 트랙 id들을 조회해 한글 로컬라이즈 값을 받아온다. (enrichment 크론용)
     public List<ItunesItem> lookupKrByTrackIds(List<String> trackIds) {
         String ids = String.join(",", trackIds);

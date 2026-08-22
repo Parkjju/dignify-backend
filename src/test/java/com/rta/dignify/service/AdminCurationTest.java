@@ -44,7 +44,7 @@ public class AdminCurationTest {
 
     @BeforeEach
     void setUp() {
-        adminService = new AdminService(curationTrackRepository, trackRepository, artistRequestRepository, userDeviceTokenRepository, null, null);
+        adminService = new AdminService(curationTrackRepository, trackRepository, artistRequestRepository, userDeviceTokenRepository, null, null, null);
 
         Genre genre = Genre.create("Rock", "락");
         entityManager.persistAndFlush(genre);

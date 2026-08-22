@@ -31,7 +31,8 @@ public class Track extends BaseTimeEntity {
 
     // iTunes의 아티스트 id. 아티스트 단위로 곡을 묶으려면 이름이 아니라 이 값이 있어야 한다
     // (동명이인이 실재하고, 한글명은 US 스토어프론트에서 로마자로 돌아온다).
-    // nullable인 이유: 이 컬럼이 생기기 전에 수집된 곡이 전부 null이다. 백필 전까지는 신규 수집분만 채워진다.
+    // nullable인 이유: 이 컬럼이 생기기 전에 수집된 곡이 전부 null이었다. 어드민 화면의 백필로 채우되,
+    // iTunes에서 내려간 곡은 조회가 안 돼 계속 null로 남는다.
     @Column(name = "artist_id")
     private Long artistId;
 
@@ -146,6 +147,13 @@ public class Track extends BaseTimeEntity {
     // KR lookup 매칭 실패: 재조회만 막음.
     public void markKoChecked() {
         this.koChecked = true;
+    }
+
+    // 백필 전용. 이미 값이 있으면 안 건드린다 — 수집 때 iTunes가 준 값이 정답이다.
+    public void backfillArtistId(Long artistId) {
+        if (this.artistId == null) {
+            this.artistId = artistId;
+        }
     }
 
     // 정크 메타(카라오케/트리뷰트/사운드알라이크/힐링·피트니스 컴필) 수집 차단. 아래 SQL UPDATE와 동일 기준 유지.

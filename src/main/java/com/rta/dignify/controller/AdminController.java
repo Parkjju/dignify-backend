@@ -1,5 +1,6 @@
 package com.rta.dignify.controller;
 
+import com.rta.dignify.dto.admin.ArtistIdBatch;
 import com.rta.dignify.dto.admin.ArtistRequestItem;
 import com.rta.dignify.dto.admin.GenreStat;
 import com.rta.dignify.dto.admin.KoBatch;
@@ -65,6 +66,21 @@ public class AdminController {
     public KoBatch enrichKoBatch(@RequestHeader("X-Cron-Secret") String secret) {
         internalSecrets.verifyAdmin(secret);
         return adminService.enrichKoBatch();
+    }
+
+    @GetMapping("/artist-id-pending")
+    public long getArtistIdPendingCount(@RequestHeader("X-Cron-Secret") String secret) {
+        internalSecrets.verifyAdmin(secret);
+        return adminService.getArtistIdPendingCount();
+    }
+
+    /// after는 화면이 들고 다니는 커서다. 처음엔 0, 다음부터는 직전 응답의 cursor를 그대로 넘긴다.
+    /// checked가 0이면 커서가 끝까지 간 것이다.
+    @PostMapping("/backfill-artist-id/batch")
+    public ArtistIdBatch backfillArtistIdBatch(@RequestHeader("X-Cron-Secret") String secret,
+                                               @RequestParam(defaultValue = "0") long after) {
+        internalSecrets.verifyAdmin(secret);
+        return adminService.backfillArtistIdBatch(after);
     }
 
     @GetMapping("/push/users")

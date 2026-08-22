@@ -5,6 +5,7 @@ import com.rta.dignify.domain.CurationTrack;
 import com.rta.dignify.domain.RequestStatus;
 import com.rta.dignify.domain.Track;
 import com.rta.dignify.domain.UserDeviceToken;
+import com.rta.dignify.dto.admin.ArtistIdBatch;
 import com.rta.dignify.dto.admin.ArtistRequestItem;
 import com.rta.dignify.dto.admin.GenreStat;
 import com.rta.dignify.dto.admin.KoBatch;
@@ -18,6 +19,7 @@ import com.rta.dignify.repository.ArtistRequestRepository;
 import com.rta.dignify.repository.CurationTrackRepository;
 import com.rta.dignify.repository.TrackRepository;
 import com.rta.dignify.repository.UserDeviceTokenRepository;
+import com.rta.dignify.service.cron.ArtistIdBackfillService;
 import com.rta.dignify.service.cron.GenreMapping;
 import com.rta.dignify.service.cron.KoEnrichmentBatchService;
 import lombok.RequiredArgsConstructor;
@@ -34,7 +36,7 @@ import java.util.stream.Stream;
 @Service
 public class AdminService {
     /// 로컬 잡과 같은 크기. iTunes lookup은 id를 한 번에 이만큼까지 받는다.
-    private static final int KO_BATCH_SIZE = 190;
+    private static final int LOOKUP_BATCH_SIZE = 190;
 
     private final CurationTrackRepository curationTrackRepository;
     private final TrackRepository trackRepository;
@@ -42,6 +44,7 @@ public class AdminService {
     private final UserDeviceTokenRepository userDeviceTokenRepository;
     private final ITunesAPIClient iTunesAPIClient;
     private final KoEnrichmentBatchService koEnrichmentBatchService;
+    private final ArtistIdBackfillService artistIdBackfillService;
 
     @Transactional(readOnly = true)
     public List<FeedItem> getCurationSet() {
@@ -116,12 +119,35 @@ public class AdminService {
     ///
     /// 트랜잭션을 걸지 않는다. iTunes 호출이 중간에 있고, 배치별 커밋은 안쪽 서비스가 각자 한다.
     public KoBatch enrichKoBatch() {
-        List<String> externalIds = koEnrichmentBatchService.peekUncheckedExternalIds(KO_BATCH_SIZE);
+        List<String> externalIds = koEnrichmentBatchService.peekUncheckedExternalIds(LOOKUP_BATCH_SIZE);
         if (externalIds.isEmpty()) {
             return new KoBatch(0, 0, 0);
         }
         int matched = koEnrichmentBatchService.applyKo(externalIds, iTunesAPIClient.lookupKrByTrackIds(externalIds));
         return new KoBatch(externalIds.size(), matched, koEnrichmentBatchService.countUnchecked());
+    }
+
+    public long getArtistIdPendingCount() {
+        return artistIdBackfillService.countMissing();
+    }
+
+    /// artistId 백필 한 배치. enrich-ko와 같은 이유로 한 배치만 하고 돌려준다(Cloud Run 스로틀링).
+    ///
+    /// ko와 달리 처리했다는 표시를 남기지 않는다 — iTunes에서 못 찾은 곡은 artistId가 계속 null이라
+    /// 커서(after) 없이는 같은 배치를 무한히 다시 집는다. 커서는 화면이 들고 다닌다.
+    /// 다시 돌리면 0부터 훑으며 못 찾았던 곡을 한 번 더 물어보는데, 그 수가 적어서 그냥 둔다.
+    public ArtistIdBatch backfillArtistIdBatch(long after) {
+        List<Track> tracks = artistIdBackfillService.peekMissing(after, LOOKUP_BATCH_SIZE);
+        if (tracks.isEmpty()) {
+            return new ArtistIdBatch(0, 0, after, artistIdBackfillService.countMissing());
+        }
+
+        List<String> externalIds = tracks.stream().map(Track::getExternalId).toList();
+        long cursor = tracks.get(tracks.size() - 1).getId();
+        int matched = artistIdBackfillService.applyArtistIds(
+                externalIds, iTunesAPIClient.lookupSongsByTrackIds(externalIds));
+
+        return new ArtistIdBatch(tracks.size(), matched, cursor, artistIdBackfillService.countMissing());
     }
 
     @Transactional(readOnly = true)

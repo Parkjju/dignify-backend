@@ -151,6 +151,18 @@
           190곡씩 채우고, 탭을 열어둔 동안만 돈다 — 중단해도 채운 데까지는 남는다.
           iTunes를 배려해 배치 사이 30초를 쉰다.</p>
       </div>
+      <div class="col">
+        <h2>아티스트 ID 백필</h2>
+        <div id="aidStatus" class="muted">확인 중…</div>
+        <div class="bar">
+          <button class="primary" id="aidRun" onclick="backfillArtistId()">채우기 시작</button>
+          <button id="aidStop" onclick="aidStop = true" style="display:none">중단</button>
+        </div>
+        <p class="muted">이름이 같은 다른 아티스트를 구분하려면 곡마다 iTunes 아티스트 id가 있어야 한다.
+          컬럼이 생기기 전에 수집된 곡이 비어 있다. 한글 보강과 같은 속도로 돈다 —
+          190곡씩, 배치 사이 30초, 탭을 열어둔 동안만.
+          iTunes에서 내려간 곡은 조회가 안 돼 끝나도 몇 곡은 미채움으로 남는다.</p>
+      </div>
     </div>
   </section>
 </main>
@@ -467,9 +479,47 @@ async function enrichKo() {
   $('#koStop').style.display = 'none';
 }
 
+/* ---------- 아티스트 ID 백필 ---------- */
+// 한글 보강과 같은 이유로 반복은 화면이 맡는다. 다른 점은 커서 — 못 찾은 곡은 계속 미채움으로
+// 남아서, 서버에 "여기까지 봤다"를 넘겨주지 않으면 같은 190곡을 무한히 다시 집는다.
+let aidStop = false;
+
+function aidLine(remaining, note = '') {
+  $('#aidStatus').innerHTML = remaining === 0
+    ? '전부 채워져 있다.'
+    : `id 미채움 <b>${remaining.toLocaleString()}</b>곡 · 약 ${Math.ceil(remaining / 190)}배치${note}`;
+}
+
+function loadArtistIdPending() {
+  run(async () => aidLine(await api('GET', '/internal/admin/artist-id-pending')));
+}
+
+async function backfillArtistId() {
+  aidStop = false;
+  $('#aidRun').style.display = 'none';
+  $('#aidStop').style.display = '';
+  let done = 0, cursor = 0;
+  try {
+    while (!aidStop) {
+      const r = await api('POST', '/internal/admin/backfill-artist-id/batch?after=' + cursor);
+      // checked가 0이면 커서가 끝까지 간 것. remaining은 못 찾은 곡 때문에 0이 아닐 수 있다.
+      if (r.checked === 0) { aidLine(r.remaining, ` — 이번에 ${done}곡 처리`); break; }
+      cursor = r.cursor;
+      done += r.checked;
+      aidLine(r.remaining, ` — 이번에 ${done}곡 처리(id 찾음 ${r.matched})`);
+      for (let i = 0; i < KO_PAUSE_MS / 1000 && !aidStop; i++) await new Promise(r => setTimeout(r, 1000));
+    }
+    toast(aidStop ? `중단했다 — ${done}곡까지 처리됨` : `끝났다 — ${done}곡 처리`);
+  } catch (e) {
+    toast('실패: ' + e.message);
+  }
+  $('#aidRun').style.display = '';
+  $('#aidStop').style.display = 'none';
+}
+
 /* ---------- 탭 ---------- */
 const loaders = { curation: loadSet, artist: loadRequests, push: loadUsers,
-                  stats: () => { loadGenreStats(); loadKoPending(); } };
+                  stats: () => { loadGenreStats(); loadKoPending(); loadArtistIdPending(); } };
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
   document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === b.dataset.tab));
