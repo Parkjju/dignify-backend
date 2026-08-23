@@ -10,16 +10,22 @@ import com.rta.dignify.repository.CurationTrackRepository;
 import com.rta.dignify.repository.TrackRepository;
 import com.rta.dignify.repository.UserHypeTrackRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.concurrent.ThreadLocalRandom;
 
 @RequiredArgsConstructor
+@Slf4j
 @Service
 public class FeedService {
     static final Integer FETCH_LIMIT = 10;
@@ -27,6 +33,8 @@ public class FeedService {
     private final TrackRepository trackRepository;
     private final UserHypeTrackRepository userHypeTrackRepository;
     private final CurationTrackRepository curationTrackRepository;
+    private final MoodRecommender moodRecommender;
+    private final ColdStartRecommender coldStartRecommender;
 
     @Transactional
     public FeedResponse getFeedList(Long userId, String cursorString) {
@@ -41,7 +49,7 @@ public class FeedService {
         }
 
         if (currentCursor.phase() == FeedCursor.Phase.GENRE) {
-            result = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(userId, FeedService.FETCH_LIMIT, currentCursor.genreOffset(), currentCursor.seed());
+            result = genreTracks(userId, currentCursor);
         } else {
             result = new ArrayList<>();
         }
@@ -63,6 +71,36 @@ public class FeedService {
             }
         }
         return response;
+    }
+
+    /// 유저가 고른 장르 안의 곡을 한 페이지 분량 가져온다.
+    ///
+    /// 하입이 있으면 무드 유사도 내림차순, 없으면 콜드스타트 인기 풀, 그것도 얇으면 종전 무작위다.
+    /// 슬롯도 배지도 토글도 없고 순서만 바뀐다 — 유저가 선언한 장르 밖으로 나가지 않으므로
+    /// "피드가 좁아진다"가 구조적으로 막히고, 셋 다 소진되면 그 장르 안 무작위,
+    /// 즉 지금 피드가 그대로 최악의 경우다.
+    private List<Track> genreTracks(Long userId, FeedCursor cursor) {
+        List<Long> ordered = moodRecommender.orderedTrackIds(userId, FETCH_LIMIT, cursor.genreOffset());
+        String source = "mood";
+        // 하입이 없으면(게스트·신규) 무드가 성립하지 않는다. 그 자리를 무작위가 아니라
+        // 커뮤니티 인기 풀로 받는다 — 첫 하입이 안 나오면 개인화가 시작되지 않기 때문이다.
+        if (ordered.isEmpty()) {
+            ordered = coldStartRecommender.orderedTrackIds(userId, FETCH_LIMIT, cursor.genreOffset(), cursor.seed());
+            source = "cold";
+        }
+        // 세 경로가 전부 조용히 서로에게 떨어진다. 어디로 나갔는지 한 줄 남긴다 —
+        // 안 남기면 "무드가 도는 건가, 콜드스타트인가, 그냥 무작위인가"를 확인할 방법이 없다.
+        log.info("[feed] userId={} offset={} source={} size={}", userId, cursor.genreOffset(),
+                ordered.isEmpty() ? "random" : source, ordered.size());
+        if (ordered.isEmpty()) {
+            return new ArrayList<>(trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(
+                    userId, FeedService.FETCH_LIMIT, cursor.genreOffset(), cursor.seed()));
+        }
+        // id 순서가 곧 정렬 순서다. IN 절 결과는 순서를 보장하지 않으므로 여기서 다시 세운다.
+        Map<Long, Track> byId = trackRepository.findAllByIdInFetchGenre(ordered).stream()
+                .collect(Collectors.toMap(Track::getId, Function.identity()));
+        return ordered.stream().map(byId::get).filter(Objects::nonNull)
+                .collect(Collectors.toCollection(ArrayList::new));
     }
 
     /// 이번 주 큐레이션 세트. 전 유저 동일 내용이고 개인화도 페이징도 없다.

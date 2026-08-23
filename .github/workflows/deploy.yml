@@ -18,13 +18,13 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # 로컬 test/application.properties와 동일한 접속정보(dignify/dignify/dignify).
+    # 로컬 test/application.properties와 동일한 접속정보(dignify/dignify/dignify_test).
     # ddl-auto=create-drop이 스키마를 엔티티에서 생성하므로 별도 마이그레이션 불필요.
     services:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_DB: dignify
+          POSTGRES_DB: dignify_test
           POSTGRES_USER: dignify
           POSTGRES_PASSWORD: dignify
         ports: [5432:5432]

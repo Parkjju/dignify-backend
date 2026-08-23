@@ -20,6 +20,7 @@ echo "▶ deploy"
 gcloud run deploy "$SERVICE" \
   --image "$IMAGE:$TAG" \
   --region "$REGION" \
-  --min-instances 1
+  --min-instances 1 \
+  --max-instances 4
 
 echo "✓ done: $IMAGE:$TAG"

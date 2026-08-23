@@ -228,7 +228,40 @@ src/main/java/com/rta/dignify/
 
 ---
 
-## Running Locally (with Cloud SQL)
+## Running Locally
+
+### Everyday development (local Postgres)
+
+```bash
+docker compose up -d postgres
+set -a && source .env && set +a
+./gradlew bootRun
+```
+
+**`.env` must be exported by hand.** Docker Compose reads it automatically; Gradle does not.
+`bootRun` only sees shell environment variables, so skipping the `source` line fails startup with
+`Could not resolve placeholder 'CRON_SECRET'`. The database connects fine either way — the app
+falls back to `localhost:5432`, which is the Postgres container.
+
+**The `app` service is intentionally left down.** Its `Dockerfile` copies `src` into the image and
+builds the jar there, with no bind mount, so a running container serves whatever the source looked
+like when the image was built. Every code change needs `docker compose up -d --build app`.
+`bootRun` recompiles on each run instead. Use the container only for a final pre-deploy check.
+
+The three lines above are wrapped in a `dgrun` shell function in `~/.zshrc` (personal, not in this
+repo). Its body is parenthesised rather than braced so that `cd` and `set -a` run in a subshell and
+never leak into the calling shell:
+
+```bash
+dgrun() (
+  cd ~/Desktop/toy_project/digging/dignify-backend || return 1
+  docker compose up -d postgres || return 1
+  set -a; source .env; set +a
+  ./gradlew bootRun
+)
+```
+
+### Data ingestion (with Cloud SQL)
 
 ```bash
 # Terminal 1 — open tunnel to Cloud SQL

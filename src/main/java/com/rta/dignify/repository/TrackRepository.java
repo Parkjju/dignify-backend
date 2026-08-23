@@ -74,6 +74,11 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
     @Query("SELECT t.externalId FROM Track t WHERE t.koChecked = FALSE ORDER BY t.id LIMIT :limit")
     List<String> findUncheckedExternalIds(@Param("limit") Integer limit);
 
+    /// 무드 슬롯 후보 20곡을 한 번에 읽는다. genre가 LAZY라 FeedItem을 만들 때 곡마다
+    /// 한 번씩 더 나가는 걸 막으려고 JOIN FETCH를 건다.
+    @Query("SELECT t FROM Track t JOIN FETCH t.genre WHERE t.id IN :ids")
+    List<Track> findAllByIdInFetchGenre(@Param("ids") List<Long> ids);
+
     List<Track> findByExternalIdIn(List<String> externalIds);
 
     long countByKoCheckedFalse();

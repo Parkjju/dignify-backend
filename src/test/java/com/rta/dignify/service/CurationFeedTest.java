@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, FeedService.class})
+@Import({JpaAuditingConfig.class, FeedService.class, MoodRecommender.class, ColdStartRecommender.class})
 public class CurationFeedTest {
 
     private static final int TRACKS_PER_GENRE = 15;

@@ -19,6 +19,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaAuditingConfig.class, FeedService.class})
+@Import({JpaAuditingConfig.class, FeedService.class, MoodRecommender.class, ColdStartRecommender.class})
 public class FeedServiceTest {
 
     private static final int TRACKS_PER_GENRE = 15;
@@ -278,5 +280,63 @@ public class FeedServiceTest {
         // 분석 키는 로케일이 바뀌어도 한 값이어야 한다 — 이게 깨지면 장르별 집계가 둘로 쪼개진다
         assertThat(ko.genreNameEn()).isEqualTo("Rock");
         assertThat(en.genreNameEn()).isEqualTo("Rock");
+    }
+
+    @Test
+    @DisplayName("""
+            1. 하입이 없는 유저의 첫 세 페이지는 무작위가 아니라 커뮤니티 인기 풀에서 나온다
+            2. 세 페이지가 중복 없이 소진된다
+            3. 첫 장은 반응이 가장 많은 10곡이다
+            """)
+    void coldStartTest() {
+        // 다른 유저가 록·발라드 30곡에 반응했다. 컨트리 15곡은 아무도 안 눌렀으므로 풀 밖이다.
+        User other = User.create("other@gmail.com", "other");
+        entityManager.persistAndFlush(other);
+        List<Track> popular = Stream.concat(rockTracks.stream(), balladTracks.stream()).toList();
+        for (Track track : popular) {
+            entityManager.persistAndFlush(UserHypeTrack.create(other, track));
+        }
+        // 앞의 10곡만 청취를 더 얹어 점수를 벌린다. 첫 페이지가 이 10곡이어야 한다 —
+        // 흩뿌리기 순서를 그대로 내보내면 반응 많은 곡이 3페이지로 밀린다.
+        List<Track> mostReacted = popular.subList(0, 10);
+        for (Track track : mostReacted) {
+            entityManager.persistAndFlush(ListenedTrack.create(other, track));
+        }
+        int index = 0;
+        for (Track track : Stream.concat(popular.stream(), countryTracks.stream()).toList()) {
+            insertVector(track, index++);
+        }
+
+        List<Long> drained = new ArrayList<>();
+        List<Long> firstPage = null;
+        String cursor = null;
+        for (int page = 0; page < 3; page++) {
+            FeedResponse response = feedService.getFeedList(user.getId(), cursor);
+            assertThat(response.items()).hasSize(10);
+            List<Long> ids = response.items().stream().map(FeedItem::trackId).toList();
+            if (page == 0) {
+                firstPage = ids;
+            }
+            drained.addAll(ids);
+            cursor = response.nextCursor();
+        }
+
+        // 인기 풀 밖(컨트리)이 섞이면 그냥 무작위로 떨어졌다는 뜻이다.
+        assertThat(drained).containsExactlyInAnyOrderElementsOf(popular.stream().map(Track::getId).toList());
+        // 첫 장은 반응이 가장 많은 10곡이다. 흩뿌리기는 어느 곡을 담을지만 정한다.
+        assertThat(firstPage).containsExactlyInAnyOrderElementsOf(mostReacted.stream().map(Track::getId).toList());
+    }
+
+    /// track_vectors는 엔티티가 없어 네이티브로 넣는다. v0/v1만 쓰고 나머지는 0이라 단위원 위의 점이고,
+    /// L2 정규화 상태(내적 = 코사인)라는 운영 데이터의 전제를 그대로 만족한다.
+    private void insertVector(Track track, int index) {
+        double angle = index * 0.7;
+        String columns = IntStream.range(0, MoodRecommender.DIMS).mapToObj(d -> "v" + d).collect(Collectors.joining(","));
+        String values = IntStream.range(0, MoodRecommender.DIMS)
+                .mapToObj(d -> d == 0 ? String.valueOf(Math.cos(angle)) : d == 1 ? String.valueOf(Math.sin(angle)) : "0")
+                .collect(Collectors.joining(","));
+        entityManager.getEntityManager().createNativeQuery(
+                "INSERT INTO track_vectors (track_id, genre_id," + columns + ") VALUES ("
+                        + track.getId() + "," + track.getGenre().getId() + "," + values + ")").executeUpdate();
     }
 }
