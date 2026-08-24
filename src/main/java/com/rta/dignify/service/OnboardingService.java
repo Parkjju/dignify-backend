@@ -40,10 +40,16 @@ public class OnboardingService {
         List<List<OnboardingCandidate>> pairs = pickPairs(onboardingCandidateRepository.findAllActive(),
                 ThreadLocalRandom.current());
         List<Round> rounds = pairs.stream()
-                .map(pair -> new Round(pair.get(0).getAxis(),
+                .map(pair -> new Round(pair.get(0).getAxis(), highTrackId(pair),
                         pair.stream().map(c -> FeedItem.from(c.getTrack(), false)).toList()))
                 .toList();
         return new OnboardingCandidatesResponse(rounds);
+    }
+
+    /// 쌍에서 HIGH 쪽 트랙 id. `pickPairs`가 두 극단을 하나씩 넣으므로 항상 하나 있다.
+    private static Long highTrackId(List<OnboardingCandidate> pair) {
+        return pair.stream().filter(c -> HIGH.equals(c.getPole())).findFirst()
+                .map(c -> c.getTrack().getId()).orElse(null);
     }
 
     /// 축마다 HIGH·LOW에서 한 곡씩 뽑아 섞은 쌍. 축 순서는 이름순으로 고정한다 —
