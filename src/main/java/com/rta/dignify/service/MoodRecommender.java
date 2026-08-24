@@ -7,7 +7,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -72,6 +74,51 @@ public class MoodRecommender {
         return jdbcTemplate.queryForList(
                 orderSql(seeds.size(), genreIds.size(), seedArtistIds.size(), scanWindow(limit, offset)),
                 Long.class, params.toArray());
+    }
+
+    /// 이 곡들이 **어느 하입 곡 때문에 떴는지**. 정렬은 시드별 내적의 최댓값으로 하므로,
+    /// 그 최댓값을 만든 시드가 곧 이유다. 스캔 SQL을 건드리지 않고 상위 K개(한 페이지 10곡)만
+    /// 벡터를 다시 받아 자바에서 고른다 — 10 × 5 × 32번 곱셈이라 무시할 수 있고,
+    /// 스캔 쿼리에 컬럼을 더하는 쪽은 정렬 대상 전체(9만 행)를 건드린다.
+    ///
+    /// 시드가 없거나(게스트·하입 0) 후보에 벡터가 없으면 빈 맵이다. 호출부는 근거 없이 그냥 낸다.
+    public Map<Long, Long> seedMatches(Long userId, List<Long> trackIds) {
+        if (userId == null || trackIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Seed> seeds = findSeeds(userId);
+        if (seeds.isEmpty()) {
+            return Map.of();
+        }
+        String cols = IntStream.range(0, DIMS).mapToObj(d -> "v" + d).collect(Collectors.joining(","));
+        String sql = "SELECT track_id," + cols + " FROM track_vectors WHERE track_id IN ("
+                + placeholders(trackIds.size()) + ")";
+        Map<Long, Long> matches = new HashMap<>();
+        jdbcTemplate.query(sql, rs -> {
+            float[] vector = new float[DIMS];
+            for (int d = 0; d < DIMS; d++) {
+                vector[d] = rs.getFloat("v" + d);
+            }
+            matches.put(rs.getLong("track_id"), bestSeed(vector, seeds));
+        }, trackIds.toArray());
+        return matches;
+    }
+
+    /// 내적이 가장 큰 시드. 벡터가 L2 정규화돼 있어 내적이 곧 코사인이다.
+    static Long bestSeed(float[] vector, List<Seed> seeds) {
+        Seed best = seeds.get(0);
+        double bestDot = -Double.MAX_VALUE;
+        for (Seed seed : seeds) {
+            double dot = 0;
+            for (int d = 0; d < vector.length; d++) {
+                dot += vector[d] * seed.vector()[d];
+            }
+            if (dot > bestDot) {
+                bestDot = dot;
+                best = seed;
+            }
+        }
+        return best.trackId();
     }
 
     /// 내적 스캔에서 몇 개를 받아올지. 비활성·하입·큐레이션 곡이 뒤에서 걸러지므로

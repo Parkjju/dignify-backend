@@ -48,21 +48,26 @@ public class FeedService {
             currentCursor = FeedCursor.decode(cursorString);
         }
 
+        Map<Long, FeedItem.SimilarTo> similar;
         if (currentCursor.phase() == FeedCursor.Phase.GENRE) {
-            result = genreTracks(userId, currentCursor);
+            GenrePage page = genreTracks(userId, currentCursor);
+            result = page.tracks();
+            similar = page.similar();
         } else {
             result = new ArrayList<>();
+            similar = Map.of();
         }
 
         if (result.size() == FeedService.FETCH_LIMIT) {
             newCursor = new FeedCursor(currentCursor.phase(), currentCursor.genreOffset() + FeedService.FETCH_LIMIT, currentCursor.generalOffset(), currentCursor.seed());
-            List<FeedItem> feedItems = result.stream().map((track) -> FeedItem.from(track, false)).toList();
+            List<FeedItem> feedItems = result.stream().map((track) -> FeedItem.from(track, false, similar.get(track.getId()))).toList();
             response = new FeedResponse(feedItems, newCursor.encode(), true, false);
         } else {
             // 장르 조회에서 부족한 결과를 general 조회로 채우기 → 이 페이지는 장르 풀 소진.
             List<Track> paddingResponse = trackRepository.findGeneralTracksByGenreIdsExceptHypedTrackWithLimitAndOffset(userId, FETCH_LIMIT - result.size(), currentCursor.generalOffset(), currentCursor.seed());
             result.addAll(paddingResponse);
-            List<FeedItem> feedItems = result.stream().map((track) -> FeedItem.from(track, false)).toList();
+            // 채워 넣은 곡은 무드로 뽑힌 게 아니라 근거가 없다 — 맵에 없으니 자연히 null이 된다.
+            List<FeedItem> feedItems = result.stream().map((track) -> FeedItem.from(track, false, similar.get(track.getId()))).toList();
             newCursor = new FeedCursor(FeedCursor.Phase.GENERAL, currentCursor.genreOffset() + (FETCH_LIMIT - paddingResponse.size()), currentCursor.generalOffset() + paddingResponse.size(), currentCursor.seed());
             if (result.size() < FeedService.FETCH_LIMIT)  {
                 response = new FeedResponse(feedItems, null, false, true);
@@ -79,7 +84,11 @@ public class FeedService {
     /// 슬롯도 배지도 토글도 없고 순서만 바뀐다 — 유저가 선언한 장르 밖으로 나가지 않으므로
     /// "피드가 좁아진다"가 구조적으로 막히고, 셋 다 소진되면 그 장르 안 무작위,
     /// 즉 지금 피드가 그대로 최악의 경우다.
-    private List<Track> genreTracks(Long userId, FeedCursor cursor) {
+    /// 한 페이지의 곡과 "왜 떴는지". 근거는 무드로 뽑힌 곡에만 있다.
+    private record GenrePage(List<Track> tracks, Map<Long, FeedItem.SimilarTo> similar) {
+    }
+
+    private GenrePage genreTracks(Long userId, FeedCursor cursor) {
         List<Long> ordered = moodRecommender.orderedTrackIds(userId, FETCH_LIMIT, cursor.genreOffset());
         String source = "mood";
         // 하입이 없으면(게스트·신규) 무드가 성립하지 않는다. 그 자리를 무작위가 아니라
@@ -93,14 +102,30 @@ public class FeedService {
         log.info("[feed] userId={} offset={} source={} size={}", userId, cursor.genreOffset(),
                 ordered.isEmpty() ? "random" : source, ordered.size());
         if (ordered.isEmpty()) {
-            return new ArrayList<>(trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(
-                    userId, FeedService.FETCH_LIMIT, cursor.genreOffset(), cursor.seed()));
+            return new GenrePage(new ArrayList<>(trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(
+                    userId, FeedService.FETCH_LIMIT, cursor.genreOffset(), cursor.seed())), Map.of());
         }
         // id 순서가 곧 정렬 순서다. IN 절 결과는 순서를 보장하지 않으므로 여기서 다시 세운다.
         Map<Long, Track> byId = trackRepository.findAllByIdInFetchGenre(ordered).stream()
                 .collect(Collectors.toMap(Track::getId, Function.identity()));
-        return ordered.stream().map(byId::get).filter(Objects::nonNull)
+        List<Track> tracks = ordered.stream().map(byId::get).filter(Objects::nonNull)
                 .collect(Collectors.toCollection(ArrayList::new));
+        return new GenrePage(tracks, "mood".equals(source) ? similarTo(userId, ordered) : Map.of());
+    }
+
+    /// 무드로 뽑힌 곡마다 "가장 가까운 내 하입 곡"을 붙인다. 콜드스타트·무작위는 부르지 않는다 —
+    /// 그 경로엔 시드가 없어서 붙일 근거 자체가 없고, 없는 걸 지어내면 배지가 거짓말이 된다.
+    private Map<Long, FeedItem.SimilarTo> similarTo(Long userId, List<Long> trackIds) {
+        Map<Long, Long> matches = moodRecommender.seedMatches(userId, trackIds);
+        if (matches.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Track> seeds = trackRepository.findAllByIdInFetchGenre(matches.values().stream().distinct().toList())
+                .stream().collect(Collectors.toMap(Track::getId, Function.identity()));
+        return matches.entrySet().stream()
+                .filter(e -> seeds.containsKey(e.getValue()))
+                .collect(Collectors.toMap(Map.Entry::getKey,
+                        e -> FeedItem.SimilarTo.from(seeds.get(e.getValue()))));
     }
 
     /// 이번 주 큐레이션 세트. 전 유저 동일 내용이고 개인화도 페이징도 없다.

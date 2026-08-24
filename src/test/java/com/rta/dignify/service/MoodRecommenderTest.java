@@ -91,4 +91,17 @@ class MoodRecommenderTest {
         assertThat(MoodRecommender.scanWindow(10, 0)).isGreaterThanOrEqualTo(30);
         assertThat(MoodRecommender.scanWindow(10, 100)).isGreaterThanOrEqualTo(150);
     }
+
+    @Test
+    @DisplayName("근거는 내적이 가장 큰 시드다 — 정렬에 쓴 최댓값을 만든 그 곡")
+    void 근거_시드() {
+        MoodRecommender.Seed pop = new MoodRecommender.Seed(1L, new float[]{1, 0});
+        MoodRecommender.Seed ballad = new MoodRecommender.Seed(2L, new float[]{0, 1});
+        MoodRecommender.Seed opposite = new MoodRecommender.Seed(3L, new float[]{-1, 0});
+
+        assertThat(MoodRecommender.bestSeed(new float[]{0.9f, 0.1f}, List.of(pop, ballad, opposite))).isEqualTo(1L);
+        assertThat(MoodRecommender.bestSeed(new float[]{0.1f, 0.9f}, List.of(pop, ballad, opposite))).isEqualTo(2L);
+        // 전부 반대쪽이어도 하나는 고른다 — 정렬이 이미 그 값으로 됐으므로 근거는 항상 존재한다.
+        assertThat(MoodRecommender.bestSeed(new float[]{-1, 0}, List.of(pop, ballad, opposite))).isEqualTo(3L);
+    }
 }
