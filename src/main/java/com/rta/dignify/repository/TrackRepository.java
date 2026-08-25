@@ -13,26 +13,20 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
     // 활성 큐레이션 곡은 세트(/feed/curation)가 따로 앞세우므로 일반 피드에서 뺀다.
     // 예전엔 같은 조인으로 priority DESC 정렬해 끌어올렸는데, 그대로 두면 세트에서 한 번
     // 보고 일반 피드 첫 장에서 또 만난다. 끌어올리기가 세트로 대체된 셈이다.
+    /// 무작위 폴백. **장르로 거르지 않는다** — 장르 선택 화면을 앱에서 걷어낸 뒤로
+    /// `user_genres`는 기존 유저만 값을 갖고 아무도 고칠 수 없는 죽은 설정이 됐다(2026-08-24).
+    /// 그대로 읽으면 예전에 고른 유저만 좁은 풀에 갇히고 신규 유저는 전체를 본다.
+    ///
+    /// 장르 단계(GENRE)와 전체 단계(GENERAL)가 이걸로 같은 쿼리를 쓴다. 커서의 두 단계는
+    /// 그대로 두는데, 형식을 바꾸면 앱이 들고 있는 커서가 전부 깨지기 때문이다.
     @Query(value = "SELECT t.* FROM tracks t " +
             "LEFT JOIN users_hype_tracks uht ON t.track_id = uht.track_id AND uht.user_id = :userId " +
-            "JOIN user_genres ug ON ug.genre_id = t.genre_id AND ug.user_id = :userId " +
             "LEFT JOIN curation_tracks c ON c.track_id = t.track_id AND c.is_active IS TRUE " +
             "WHERE uht.user_hype_track_id IS NULL AND t.is_active IS TRUE AND c.curation_track_id IS NULL " +
             "ORDER BY md5(t.track_id::text || ':' || CAST(:seed AS text)) " +
             "LIMIT :limit " +
             "OFFSET :offset", nativeQuery = true)
-    List<Track> findByGenreIdsExceptHypedTrackWithLimitAndOffset(@Param("userId") Long userId, @Param("limit") Integer limit, @Param("offset") Integer offset, @Param("seed") Integer seed);
-
-    @Query(value = "SELECT t.* FROM tracks t " +
-            "LEFT JOIN users_hype_tracks uht ON t.track_id = uht.track_id AND uht.user_id = :userId " +
-            "LEFT JOIN user_genres ug ON ug.genre_id = t.genre_id AND ug.user_id = :userId " +
-            "LEFT JOIN curation_tracks c ON c.track_id = t.track_id AND c.is_active IS TRUE " +
-            "WHERE uht.user_hype_track_id IS NULL AND t.is_active IS TRUE AND ug.user_genre_id IS NULL " +
-            "AND c.curation_track_id IS NULL " +
-            "ORDER BY md5(t.track_id::text || ':' || CAST(:seed AS text)) " +
-            "LIMIT :limit " +
-            "OFFSET :offset", nativeQuery = true)
-    List<Track> findGeneralTracksByGenreIdsExceptHypedTrackWithLimitAndOffset(@Param("userId") Long userId, @Param("limit") Integer limit, @Param("offset") Integer offset, @Param("seed") Integer seed);
+    List<Track> findRandomTracksExceptHyped(@Param("userId") Long userId, @Param("limit") Integer limit, @Param("offset") Integer offset, @Param("seed") Integer seed);
 
     /// 검색어와 컬럼 양쪽에서 라틴 발음기호를 뗀다. "rosalia"로 쳐도 "ROSALÍA"가 걸리게.
     /// 자바 쪽(FeedService.foldAccents)이 같은 표를 그대로 쓰므로 양쪽 결과가 항상 일치한다.

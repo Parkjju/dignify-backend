@@ -51,9 +51,25 @@ class MoodRecommenderTest {
         String sql = MoodRecommender.orderSql(3, 1, 1, 40);
         // 동점 정렬이 페이지마다 흔들리면 OFFSET 페이징이 곡을 건너뛰거나 중복시킨다.
         assertThat(sql).contains("ORDER BY sim DESC, track_id LIMIT 40");
-        assertThat(sql).contains("ORDER BY c.sim DESC, t.track_id LIMIT ? OFFSET ?");
+        assertThat(sql).contains("ORDER BY rn, sim DESC, track_id LIMIT ? OFFSET ?");
         // 내적을 SELECT와 ORDER BY에서 두 번 계산하면 스캔 비용이 두 배가 된다.
         assertThat(sql).containsOnlyOnce("GREATEST(");
+    }
+
+    @Test
+    @DisplayName("시드마다 몫을 준다 — 유사도 하나로만 줄 세우지 않는다")
+    void 시드별_라운드로빈() {
+        // rn이 첫 정렬 키다. 시드별 1등끼리, 2등끼리 묶여 나가야 세 시드가 고르게 섞인다.
+        // 유사도만으로 줄 세우면 밀집 지역에 있는 시드 하나가 페이지를 통째로 먹는다.
+        String sql = MoodRecommender.orderSql(3, 0, 0, 40);
+        assertThat(sql).contains("ROW_NUMBER() OVER (PARTITION BY ");
+        assertThat(sql).contains("ORDER BY rn, ");
+
+        // 시드가 하나면 나눌 것이 없다. CASE를 세우면 상수 파티션에 쓸데없는 비교가 붙는다.
+        assertThat(MoodRecommender.bestSeedCase(1)).isEqualTo("0");
+        // 셋이면 가장 큰 내적을 가진 시드 번호로 갈린다. 마지막은 비교 없이 ELSE로 받는다.
+        assertThat(MoodRecommender.bestSeedCase(3))
+                .isEqualTo("CASE WHEN c.s0 >= c.s1 AND c.s0 >= c.s2 THEN 0 WHEN c.s1 >= c.s2 THEN 1 ELSE 2 END");
     }
 
     @Test

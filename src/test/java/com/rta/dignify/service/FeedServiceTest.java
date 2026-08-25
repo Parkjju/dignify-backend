@@ -14,6 +14,7 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -38,6 +39,9 @@ public class FeedServiceTest {
 
     @Autowired
     TestEntityManager entityManager;
+
+    @Autowired
+    com.rta.dignify.repository.UserHypeTrackRepository userHypeTrackRepository;
 
     Genre rockGenre;
     Genre balladGenre;
@@ -81,14 +85,15 @@ public class FeedServiceTest {
 
     @Test
     @DisplayName("""
-            1. 선호 장르가 없는 유저 조회 테스트
+            1. 장르를 고르지 않은 유저도 전 카탈로그에서 10곡을 받는다
             """)
     void noneOfPreferGenreTest() {
         FeedResponse response = feedService.getFeedList(user.getId(), null);
         FeedCursor cursor = FeedCursor.decode(response.nextCursor());
 
-        assertThat(cursor.phase()).isEqualTo(FeedCursor.Phase.GENERAL);
-        assertThat(response.items()).hasSize(10);
+        // 예전엔 장르 풀이 비어 GENERAL로 넘어갔다. 이제 장르로 거르지 않으므로 GENRE에 머문다.
+        assertThat(cursor.phase()).isEqualTo(FeedCursor.Phase.GENRE);
+        assertThat(response.items()).hasSize(FeedService.FETCH_LIMIT);
     }
 
     @Test
@@ -101,57 +106,52 @@ public class FeedServiceTest {
         UserGenre userGenre = UserGenre.create(user, rockGenre);
         entityManager.persistAndFlush(userGenre);
 
-        // 1. 커서 문자열 null 조회 테스트 (seed 셔플로 순서는 비결정적 → 선호 장르 트랙 집합만 검증)
+        // 1. 커서 문자열 null 조회. **Rock만 고른 유저인데 세 장르가 다 나와야 한다** —
+        //    user_genres를 안 읽는 것이 이 테스트가 지키는 성질이다.
         FeedResponse response = feedService.getFeedList(user.getId(), null);
-        List<Long> allRockIds = rockTracks.stream().map(Track::getId).toList();
-        assertThat(response.items()).hasSize(10);
-        assertThat(response.items()).extracting(FeedItem::trackId).isSubsetOf(allRockIds);
+        List<Long> allIds = Stream.of(rockTracks, balladTracks, countryTracks)
+                .flatMap(List::stream).map(Track::getId).toList();
+        assertThat(response.items()).hasSize(FeedService.FETCH_LIMIT);
+        assertThat(response.items()).extracting(FeedItem::trackId).isSubsetOf(allIds);
 
         // 2. 커서 발급 확인
         String cursorString = response.nextCursor();
         FeedCursor cursor = FeedCursor.decode(cursorString);
         assertThat(cursor.phase()).isEqualTo(FeedCursor.Phase.GENRE);
         assertThat(cursor.generalOffset()).isEqualTo(0);
-        assertThat(cursor.genreOffset()).isEqualTo(10);
+        assertThat(cursor.genreOffset()).isEqualTo(FeedService.FETCH_LIMIT);
     }
 
     @Test
     @DisplayName("""
-            1. null 커서 전달, 락 장르 선호
-            2. 락 장르 모두 순회 후 GENERAL phase로 전환 테스트
-            3. 10개씩 순회되는지, genreOffset / generalOffset값 정상인지 체크
+            1. 카탈로그가 바닥나면 피드가 끝난다(general 패딩 없음)
+            2. 끝까지 순회해도 같은 곡이 두 번 나오지 않는다
             """)
     void phaseChangingTest() {
         UserGenre userGenre = UserGenre.create(user, rockGenre);
         entityManager.persistAndFlush(userGenre);
 
-        // 1. 커서 문자열 null 조회
-        FeedResponse response = feedService.getFeedList(user.getId(), null);
+        // 장르 필터가 없으니 후보는 세 장르 45곡 전부다. 한 장에 FETCH_LIMIT곡씩 나간다.
+        List<Long> drained = new ArrayList<>();
+        String cursor = null;
+        FeedResponse resp;
+        int pages = 0;
+        do {
+            resp = feedService.getFeedList(user.getId(), cursor);
+            resp.items().forEach(item -> drained.add(item.trackId()));
+            cursor = resp.nextCursor();
+            pages++;
+        } while (resp.hasMore());
 
-        // 2. 추가순회
-        FeedResponse assertResponse = feedService.getFeedList(user.getId(), response.nextCursor());
-        List<Long> allRockIds = rockTracks.stream().map(Track::getId).toList();
-
-        // seed 셔플로 페이지별 순서는 비결정적이지만 구조는 유지: page2 앞 5개는 남은 rock, 뒤는 general 패딩
-        FeedCursor newCursor = FeedCursor.decode(assertResponse.nextCursor());
-        List<FeedItem> trackResponse = assertResponse.items();
-        List<Long> generalPoolIds = Stream.concat(balladTracks.stream(), countryTracks.stream())
-                .map(Track::getId)
-                .toList();
-
-        assertThat(trackResponse.subList(0, 5)).extracting(FeedItem::trackId).isSubsetOf(allRockIds);
-        assertThat(trackResponse.subList(5, trackResponse.size())).extracting(FeedItem::trackId).isSubsetOf(generalPoolIds);
-
-        // page1(rock 10개) + page2 앞 5개 = rock 전체, 중복 없음
-        List<Long> rockServed = Stream.concat(
-                response.items().stream().map(FeedItem::trackId),
-                trackResponse.subList(0, 5).stream().map(FeedItem::trackId)
-        ).toList();
-        assertThat(rockServed).containsExactlyInAnyOrderElementsOf(allRockIds);
-
-        assertThat(newCursor.phase()).isEqualTo(FeedCursor.Phase.GENERAL);
-        assertThat(newCursor.genreOffset()).isEqualTo(rockTracks.size());
-        assertThat(newCursor.generalOffset()).isEqualTo(5);
+        int total = TRACKS_PER_GENRE * 3;
+        assertThat(pages).isEqualTo((total + FeedService.FETCH_LIMIT - 1) / FeedService.FETCH_LIMIT);
+        assertThat(resp.items()).hasSize(total % FeedService.FETCH_LIMIT);
+        assertThat(resp.nextCursor()).isNull();
+        // 예전엔 부족한 자리를 general 조회로 채웠는데, 두 쿼리가 같아진 지금 그러면
+        // offset이 0부터 다시 시작해 방금 본 곡이 또 나온다. 그래서 패딩을 없앴다.
+        assertThat(drained).doesNotHaveDuplicates().hasSize(TRACKS_PER_GENRE * 3);
+        // 장르 소진 토스트는 더 이상 뜨지 않아야 한다.
+        assertThat(resp.genreExhausted()).isFalse();
     }
 
     @Test
@@ -269,10 +269,12 @@ public class FeedServiceTest {
         UserGenre userGenre = UserGenre.create(user, rockGenre);
         entityManager.persistAndFlush(userGenre);
 
+        // 장르로 거르지 않게 되면서 첫 곡이 록이라는 보장이 사라졌다. 세 장르가 섞여 나오므로
+        // 끝까지 훑어 록 곡 하나를 집는다 — 첫 칸을 그냥 쓰면 장르에 따라 결과가 흔들린다.
         LocaleContextHolder.setLocale(Locale.KOREAN);
-        FeedItem ko = feedService.getFeedList(user.getId(), null).items().get(0);
+        FeedItem ko = anyRockItem();
         LocaleContextHolder.setLocale(Locale.ENGLISH);
-        FeedItem en = feedService.getFeedList(user.getId(), null).items().get(0);
+        FeedItem en = anyRockItem();
         LocaleContextHolder.resetLocaleContext();
 
         assertThat(ko.genreName()).isEqualTo("락");
@@ -280,6 +282,23 @@ public class FeedServiceTest {
         // 분석 키는 로케일이 바뀌어도 한 값이어야 한다 — 이게 깨지면 장르별 집계가 둘로 쪼개진다
         assertThat(ko.genreNameEn()).isEqualTo("Rock");
         assertThat(en.genreNameEn()).isEqualTo("Rock");
+    }
+
+    /// 피드를 끝까지 훑어 록 트랙 한 칸을 돌려준다.
+    private FeedItem anyRockItem() {
+        List<Long> rockIds = rockTracks.stream().map(Track::getId).toList();
+        String cursor = null;
+        FeedResponse resp;
+        do {
+            resp = feedService.getFeedList(user.getId(), cursor);
+            for (FeedItem item : resp.items()) {
+                if (rockIds.contains(item.trackId())) {
+                    return item;
+                }
+            }
+            cursor = resp.nextCursor();
+        } while (resp.hasMore());
+        throw new AssertionError("피드에 록 트랙이 하나도 없다");
     }
 
     @Test
@@ -307,24 +326,146 @@ public class FeedServiceTest {
             insertVector(track, index++);
         }
 
-        List<Long> drained = new ArrayList<>();
-        List<Long> firstPage = null;
-        String cursor = null;
-        for (int page = 0; page < 3; page++) {
-            FeedResponse response = feedService.getFeedList(user.getId(), cursor);
-            assertThat(response.items()).hasSize(10);
-            List<Long> ids = response.items().stream().map(FeedItem::trackId).toList();
-            if (page == 0) {
-                firstPage = ids;
-            }
-            drained.addAll(ids);
-            cursor = response.nextCursor();
+        // FETCH_LIMIT가 30이 되면서 콜드스타트 창(WINDOW=30)이 첫 한 페이지에 다 들어간다.
+        List<Long> firstPage = feedService.getFeedList(user.getId(), null).items()
+                .stream().map(FeedItem::trackId).toList();
+
+        assertThat(firstPage).hasSize(ColdStartRecommender.WINDOW);
+        // 인기 풀 밖(컨트리)이 섞이면 그냥 무작위로 떨어졌다는 뜻이다.
+        assertThat(firstPage).isSubsetOf(popular.stream().map(Track::getId).toList());
+        // 앞쪽 열 칸이 반응이 가장 많은 10곡이다. 흩뿌리기는 어느 곡을 담을지만 정하고
+        // 순서는 반응 수가 정한다 — 그리디 순서를 그대로 내면 인기곡이 뒤로 밀린다.
+        assertThat(firstPage.subList(0, 10))
+                .containsExactlyInAnyOrderElementsOf(mostReacted.stream().map(Track::getId).toList());
+    }
+
+    @Test
+    @DisplayName("""
+            1. 추천 기준 곡을 고정하면 최근 하입 대신 그것만 시드가 된다
+            2. 디깅 성향을 끄면 개인화 경로를 통째로 건너뛴다
+            """)
+    void seedPinningAndDiggingModeTest() {
+        int index = 0;
+        for (Track track : Stream.of(rockTracks, balladTracks, countryTracks).flatMap(List::stream).toList()) {
+            insertVector(track, index++);
+        }
+        // 세 곡을 하입한다. 고정이 없으면 이 셋이 그대로 시드다.
+        Track pinned = rockTracks.get(0);
+        for (Track track : List.of(pinned, balladTracks.get(0), countryTracks.get(0))) {
+            entityManager.persistAndFlush(UserHypeTrack.create(user, track));
+        }
+        entityManager.flush();
+
+        // 1. 한 곡만 고정하면 모든 카드의 근거가 그 곡이어야 한다.
+        //    근거(similarTo)는 시드별 내적의 최댓값을 만든 시드라, 시드가 하나면 전부 그 곡이 된다.
+        userHypeTrackRepository.markSeeds(user.getId(), List.of(pinned.getId()));
+        entityManager.clear();
+
+        List<FeedItem> items = feedService.getFeedList(user.getId(), null).items();
+        assertThat(items).hasSize(FeedService.FETCH_LIMIT);
+        assertThat(items).allSatisfy(item -> {
+            assertThat(item.similarTo()).isNotNull();
+            assertThat(item.similarTo().trackId()).isEqualTo(pinned.getId());
+        });
+
+        // 2. 성향을 끄면 무드도 콜드스타트도 안 탄다. 근거가 붙지 않는 것이 그 증거다 —
+        //    근거는 무드로 뽑힌 곡에만 붙기 때문이다.
+        entityManager.find(User.class, user.getId()).changeDiggingMode(false);
+        entityManager.flush();
+        entityManager.clear();
+
+        List<FeedItem> off = feedService.getFeedList(user.getId(), null).items();
+        assertThat(off).hasSize(FeedService.FETCH_LIMIT);
+        assertThat(off).allSatisfy(item -> assertThat(item.similarTo()).isNull());
+    }
+
+    @Test
+    @DisplayName("""
+            1. 같은 커서면 같은 순서가 나온다
+            2. 앞 SEEDS칸은 안 섞이고, 뒤쪽만 커서 seed에 따라 달라진다
+            """)
+    void moodPageIsShuffledButStable() {
+        int index = 0;
+        for (Track track : Stream.of(rockTracks, balladTracks, countryTracks).flatMap(List::stream).toList()) {
+            insertVector(track, index++);
+        }
+        for (Track track : List.of(rockTracks.get(0), balladTracks.get(0), countryTracks.get(0))) {
+            entityManager.persistAndFlush(UserHypeTrack.create(user, track));
+        }
+        entityManager.clear();
+
+        // 커서를 직접 만든다. null로 넣으면 매번 새 seed가 뽑혀 순서 비교가 성립하지 않는다.
+        String cursor = new FeedCursor(FeedCursor.Phase.GENRE, 0, 0, 12345).encode();
+        List<Long> first = ids(feedService.getFeedList(user.getId(), cursor));
+        List<Long> again = ids(feedService.getFeedList(user.getId(), cursor));
+
+        // 같은 커서로 다시 받았는데 순서가 달라지면, 같은 페이지를 다시 받았을 때 곡이 겹치거나
+        // 빠진다 — 커서는 오프셋만 들고 있어서 무엇을 이미 보여줬는지 기억하지 못한다.
+        assertThat(again).containsExactlyElementsOf(first);
+
+        List<Long> other = ids(feedService.getFeedList(user.getId(),
+                new FeedCursor(FeedCursor.Phase.GENRE, 0, 0, 999).encode()));
+        // 어떤 곡이 이 페이지에 들어갈지는 시드별 순번이 정하고 섞기는 자리만 바꾼다.
+        assertThat(other).containsExactlyInAnyOrderElementsOf(first);
+        // 앞 칸은 하입 곡마다 가장 가까운 한 곡씩이라 seed와 무관하게 그대로 서 있어야 한다.
+        assertThat(other.subList(0, MoodRecommender.SEEDS))
+                .containsExactlyElementsOf(first.subList(0, MoodRecommender.SEEDS));
+        // 뒤쪽은 실제로 섞였는지. 우연히 같을 확률은 무시할 수 있다.
+        assertThat(other).isNotEqualTo(first);
+    }
+
+    private static List<Long> ids(FeedResponse response) {
+        return response.items().stream().map(FeedItem::trackId).toList();
+    }
+
+    @Test
+    @DisplayName("""
+            1. 스캔 창 안이 전부 걸러져 페이지가 짧아도 피드를 끊지 않는다
+            2. 오프셋은 짧은 페이지에도 FETCH_LIMIT만큼 민다
+            """)
+    void shortMoodPageDoesNotEndFeed() {
+        // 유사도 순위는 벡터 전체를 덮으므로 짧은 페이지가 곧 소진은 아니다. 그걸 세우려면
+        // 벡터가 스캔 창(scanWindow(30,0) = 300)보다 많아야 한다 — 창이 전체를 덮어 버리면
+        // 그때는 정말 아래에 아무것도 없는 게 맞다.
+        List<Track> bulk = new ArrayList<>();
+        for (int i = 0; i < 320; i++) {
+            Track track = Track.create("bulk-" + i, "Bulk Artist " + i, "Bulk Album " + i, "Bulk Track " + i,
+                    "https://example.com/preview/bulk" + i + ".mp3", "https://example.com/track/bulk" + i,
+                    "https://example.com/art/bulk" + i + ".jpg", Instant.now(), rockGenre, "US", "ITUNES");
+            entityManager.persist(track);
+            bulk.add(track);
+        }
+        entityManager.flush();
+
+        List<Track> all = Stream.concat(
+                Stream.of(rockTracks, balladTracks, countryTracks).flatMap(List::stream), bulk.stream()).toList();
+        int index = 0;
+        for (Track track : all) {
+            insertVector(track, index++);
         }
 
-        // 인기 풀 밖(컨트리)이 섞이면 그냥 무작위로 떨어졌다는 뜻이다.
-        assertThat(drained).containsExactlyInAnyOrderElementsOf(popular.stream().map(Track::getId).toList());
-        // 첫 장은 반응이 가장 많은 10곡이다. 흩뿌리기는 어느 곡을 담을지만 정한다.
-        assertThat(firstPage).containsExactlyInAnyOrderElementsOf(mostReacted.stream().map(Track::getId).toList());
+        // 세 곡만 남기고 전부 끈다. 상위 300개가 거의 다 걸러지는 상황을 만든 것이다.
+        List<Track> alive = all.subList(0, 3);
+        for (Track track : all) {
+            if (!alive.contains(track)) {
+                ReflectionTestUtils.setField(track, "isActive", false);
+                entityManager.persist(track);
+            }
+        }
+        // 시드는 꺼진 곡이어도 된다 — findSeeds는 벡터와 하입만 본다.
+        entityManager.persistAndFlush(UserHypeTrack.create(user, all.get(100)));
+        entityManager.clear();
+
+        FeedResponse response = feedService.getFeedList(user.getId(), null);
+
+        // 한 페이지를 못 채운다. 예전 판정이면 여기서 커서가 끊겨 피드가 끝났다.
+        assertThat(response.items()).hasSizeLessThan(FeedService.FETCH_LIMIT);
+        assertThat(response.hasMore()).isTrue();
+        assertThat(response.nextCursor()).isNotNull();
+        // 받은 수가 아니라 FETCH_LIMIT만큼 민다. 받은 수만큼 밀면 다음 창이 거의 안 커져
+        // 같은 자리에서 요청이 헛돈다.
+        assertThat(FeedCursor.decode(response.nextCursor()).genreOffset())
+                .isEqualTo(FeedService.FETCH_LIMIT);
     }
 
     /// track_vectors는 엔티티가 없어 네이티브로 넣는다. v0/v1만 쓰고 나머지는 0이라 단위원 위의 점이고,

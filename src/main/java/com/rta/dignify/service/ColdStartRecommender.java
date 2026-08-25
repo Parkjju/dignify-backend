@@ -27,8 +27,9 @@ import java.util.stream.IntStream;
 @RequiredArgsConstructor
 @Component
 public class ColdStartRecommender {
-    /// 콜드스타트가 담당하는 범위. 10곡 × 3페이지다. 그 뒤로는 무작위로 넘긴다 —
-    /// 세 페이지를 보고도 하입이 하나도 없으면 인기 풀이 이 유저에게 안 맞는다는 뜻이다.
+    /// 콜드스타트가 담당하는 범위. 곡 수는 그대로 30인데 `FeedService.FETCH_LIMIT`가 30이 되면서
+    /// 세 페이지가 아니라 **첫 한 페이지**가 됐다(2026-08-24). 그 뒤로는 무작위로 넘긴다 —
+    /// 서른 곡을 보고도 하입이 하나도 없으면 인기 풀이 이 유저에게 안 맞는다는 뜻이다.
     static final int WINDOW = 30;
     /// 인기순 상위 몇 곡을 후보 원본으로 볼지. 운영 실측으로 120등의 점수가 7점(하입 1 + 청취 2)이라
     /// 여기까지는 "반응이 있었다"고 부를 수 있다. 더 늘리면 무작위와 구분이 안 되기 시작한다.
@@ -80,8 +81,9 @@ public class ColdStartRecommender {
     /// ponytail: 집계 캐시 없이 매 요청 GROUP BY다. 대상이 하입 1.3천 + 청취 3.6천 행이라 지금은
     /// 이게 더 싸다. 청취 로그가 수십만 행이 되면 집계 테이블이나 캐시로 옮길 것.
     private List<Candidate> findPool(Long userId) {
-        List<Long> genreIds = userId == null ? List.<Long>of()
-                : jdbcTemplate.queryForList("SELECT genre_id FROM user_genres WHERE user_id = ?", Long.class, userId);
+        // 장르는 안 읽는다(2026-08-24). MoodRecommender와 같은 이유로, 고칠 수 없게 된 설정이
+        // 기존 유저의 첫 화면만 좁히고 있었다. poolSql의 필터 자리는 그대로 남겨 둔다.
+        List<Long> genreIds = List.<Long>of();
         // 파라미터 순서는 SQL에 나오는 순서 그대로 — 하입 조인, 청취 조인, 그 다음 장르다.
         List<Object> params = new ArrayList<>();
         params.add(userId);

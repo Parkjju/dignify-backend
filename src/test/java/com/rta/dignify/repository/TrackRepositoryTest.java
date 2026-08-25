@@ -52,10 +52,10 @@ public class TrackRepositoryTest {
         entityManager.persistAndFlush(userWithRockGenre);
 
         // 동일 seed로 순서가 안정적이므로 offset 페이징이 겹치지 않는지 검증(순서 자체는 seed 셔플이라 비결정적)
-        List<Track> result1 = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 3, 0, 0);
+        List<Track> result1 = trackRepository.findRandomTracksExceptHyped(user.getId(), 3, 0, 0);
         assertThat(result1).hasSize(3);
 
-        List<Track> result2 = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 3, 3, 0);
+        List<Track> result2 = trackRepository.findRandomTracksExceptHyped(user.getId(), 3, 3, 0);
         assertThat(result2).hasSize(3);
 
         List<Long> combined = Stream.concat(result1.stream(), result2.stream()).map(Track::getId).toList();
@@ -91,12 +91,15 @@ public class TrackRepositoryTest {
         UserGenre userWithRockGenre = UserGenre.create(user, rockGenre);
         entityManager.persistAndFlush(userWithRockGenre);
 
-        List<Track> result = trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 3, 0, 0);
+        List<Track> result = trackRepository.findRandomTracksExceptHyped(user.getId(), 3, 0, 0);
         assertThat(result).extracting(Track::getId).containsExactlyInAnyOrder(rockTrack1.getId(), rockTrack3.getId());
     }
 
+    /// 예전엔 선호 장르 안의 곡만 나오는지 보던 테스트다. 장르 선택 화면을 걷어낸 뒤로
+    /// user_genres는 기존 유저만 값을 갖고 고칠 수도 없는 죽은 설정이 돼서, 읽으면 그 유저들만
+    /// 좁은 풀에 갇힌다. **이제 뜻이 뒤집혀 "장르 행이 있어도 안 본다"가 지켜야 할 성질이다.**
     @Test
-    @DisplayName("선호 장르 필터링 테스트")
+    @DisplayName("user_genres 행이 있어도 후보를 좁히지 않는다")
     void preferGenreTrackTest() {
         Genre rockGenre = Genre.create("Rock", "락");
         entityManager.persistAndFlush(rockGenre);
@@ -126,15 +129,9 @@ public class TrackRepositoryTest {
         UserGenre userWithRockGenre = UserGenre.create(user, rockGenre);
         entityManager.persistAndFlush(userWithRockGenre);
 
-        // 선호 장르인 Rock 트랙만 10개 조회, 발라드 트랙은 조회되면 안됨
-        assertThat(trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 20, 0, 0)).hasSize(10)
-                .extracting(Track::getGenre).extracting(Genre::getGenreNameKo).doesNotContain("발라드");
-
-        // 장르 선호 추가
-        UserGenre userWithBalladGenre = UserGenre.create(user, balladGenre);
-        entityManager.persistAndFlush(userWithBalladGenre);
-
-        assertThat(trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(user.getId(), 20, 0, 0)).hasSize(20);
+        // 유저는 Rock만 골라 뒀는데도 발라드까지 20곡 전부 나와야 한다.
+        assertThat(trackRepository.findRandomTracksExceptHyped(user.getId(), 20, 0, 0)).hasSize(20)
+                .extracting(Track::getGenre).extracting(Genre::getGenreNameKo).contains("발라드");
     }
 
     @Test

@@ -9,16 +9,19 @@ import com.rta.dignify.dto.feed.FeedResponse;
 import com.rta.dignify.repository.CurationTrackRepository;
 import com.rta.dignify.repository.TrackRepository;
 import com.rta.dignify.repository.UserHypeTrackRepository;
+import com.rta.dignify.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Random;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -28,13 +31,19 @@ import java.util.concurrent.ThreadLocalRandom;
 @Slf4j
 @Service
 public class FeedService {
-    static final Integer FETCH_LIMIT = 10;
+    /// 한 번에 내려주는 곡 수. **10에서 30으로 올렸다(2026-08-24).**
+    /// 무드 스캔 비용은 뽑는 개수가 아니라 벡터 8만 5천 행을 훑는 데 있어서, 30곡을 뽑아도
+    /// 10곡과 값이 거의 같다(로컬 실측 23.4ms vs 23.8ms). 요청이 3분의 1로 줄어 유저가
+    /// 기다리는 횟수도 서버 부하도 같이 준다. 서울에서 미국 리전까지 왕복이 요청당 218ms라
+    /// 이쪽 이득이 스캔 자체보다 클 수 있다.
+    static final Integer FETCH_LIMIT = 30;
 
     private final TrackRepository trackRepository;
     private final UserHypeTrackRepository userHypeTrackRepository;
     private final CurationTrackRepository curationTrackRepository;
     private final MoodRecommender moodRecommender;
     private final ColdStartRecommender coldStartRecommender;
+    private final UserRepository userRepository;
 
     @Transactional
     public FeedResponse getFeedList(Long userId, String cursorString) {
@@ -48,32 +57,31 @@ public class FeedService {
             currentCursor = FeedCursor.decode(cursorString);
         }
 
-        Map<Long, FeedItem.SimilarTo> similar;
-        if (currentCursor.phase() == FeedCursor.Phase.GENRE) {
-            GenrePage page = genreTracks(userId, currentCursor);
-            result = page.tracks();
-            similar = page.similar();
-        } else {
-            result = new ArrayList<>();
-            similar = Map.of();
-        }
+        // 단계로 갈라 보지 않는다. 예전 앱이 들고 있던 GENERAL 커서도 같은 후보를 봐야 하고,
+        // 여기서 빈 결과를 주면 그 유저의 피드가 그 자리에서 끝난다.
+        GenrePage page = genreTracks(userId, currentCursor);
+        result = page.tracks();
+        Map<Long, FeedItem.SimilarTo> similar = page.similar();
 
-        if (result.size() == FeedService.FETCH_LIMIT) {
+        List<FeedItem> feedItems = result.stream().map((track) -> FeedItem.from(track, false, similar.get(track.getId()))).toList();
+        // **풀이 하나가 되면서 general 패딩을 없앴다(2026-08-24).** 장르로 안 거르니 장르 단계와
+        // 전체 단계가 같은 후보를 보고, 부족한 자리를 전체 단계로 채우면 offset이 0부터 다시
+        // 시작해 방금 보여준 곡이 그대로 또 나온다. 이제 카탈로그가 바닥나면 피드가 끝난다.
+        //
+        // `genreExhausted`는 항상 false다. 앱이 이 값으로 "장르가 소진됐다" 토스트를 띄우는데
+        // 장르 선택이 없어진 지금은 띄울 말이 아니다. 응답 필드는 남긴다 — 빼면 앱이 깨진다.
+        // **페이지 길이로 소진을 판정하지 않는다(2026-08-24).** 무드 정렬은 스캔 창 안이 전부
+        // 걸러지면 짧은 페이지를 내는데, 그건 곡이 없어서가 아니라 창이 좁아서다. 길이로 끊으면
+        // 아래에 2만 곡이 남아 있는 유저의 피드가 그 자리에서 닫힌다.
+        //
+        // 오프셋은 짧은 페이지에도 FETCH_LIMIT만큼 민다. 받은 수만큼만 밀면 다음 요청의 창이
+        // 거의 안 커져서 같은 자리를 몇 번씩 오간다. 못 본 곡 몇 개를 건너뛰는 편이 낫다 —
+        // 디깅 피드라 2만 8천 곡 중 몇 개는 티가 안 나고, 요청이 헛도는 건 티가 난다.
+        if (page.moreBelow()) {
             newCursor = new FeedCursor(currentCursor.phase(), currentCursor.genreOffset() + FeedService.FETCH_LIMIT, currentCursor.generalOffset(), currentCursor.seed());
-            List<FeedItem> feedItems = result.stream().map((track) -> FeedItem.from(track, false, similar.get(track.getId()))).toList();
             response = new FeedResponse(feedItems, newCursor.encode(), true, false);
         } else {
-            // 장르 조회에서 부족한 결과를 general 조회로 채우기 → 이 페이지는 장르 풀 소진.
-            List<Track> paddingResponse = trackRepository.findGeneralTracksByGenreIdsExceptHypedTrackWithLimitAndOffset(userId, FETCH_LIMIT - result.size(), currentCursor.generalOffset(), currentCursor.seed());
-            result.addAll(paddingResponse);
-            // 채워 넣은 곡은 무드로 뽑힌 게 아니라 근거가 없다 — 맵에 없으니 자연히 null이 된다.
-            List<FeedItem> feedItems = result.stream().map((track) -> FeedItem.from(track, false, similar.get(track.getId()))).toList();
-            newCursor = new FeedCursor(FeedCursor.Phase.GENERAL, currentCursor.genreOffset() + (FETCH_LIMIT - paddingResponse.size()), currentCursor.generalOffset() + paddingResponse.size(), currentCursor.seed());
-            if (result.size() < FeedService.FETCH_LIMIT)  {
-                response = new FeedResponse(feedItems, null, false, true);
-            } else {
-                response = new FeedResponse(feedItems, newCursor.encode(), true, true);
-            }
+            response = new FeedResponse(feedItems, null, false, false);
         }
         return response;
     }
@@ -84,11 +92,33 @@ public class FeedService {
     /// 슬롯도 배지도 토글도 없고 순서만 바뀐다 — 유저가 선언한 장르 밖으로 나가지 않으므로
     /// "피드가 좁아진다"가 구조적으로 막히고, 셋 다 소진되면 그 장르 안 무작위,
     /// 즉 지금 피드가 그대로 최악의 경우다.
-    /// 한 페이지의 곡과 "왜 떴는지". 근거는 무드로 뽑힌 곡에만 있다.
-    private record GenrePage(List<Track> tracks, Map<Long, FeedItem.SimilarTo> similar) {
+    /// 디깅 성향이 켜져 있는지. 게스트는 끌 자리가 없으므로 항상 켜진 것으로 본다.
+    /// 유저 행이 없어도 켜짐이다 — 판단이 안 서면 지금 동작을 유지하는 쪽이 안전하다.
+    private boolean diggingModeOn(Long userId) {
+        if (userId == null) {
+            return true;
+        }
+        return userRepository.findById(userId).map(user -> Boolean.TRUE.equals(user.getDiggingMode())).orElse(true);
+    }
+
+    /// 한 페이지의 곡과 "왜 떴는지", 그리고 아래에 더 있는지.
+    ///
+    /// `moreBelow`를 페이지 길이로 대신할 수 없어서 따로 싣는다. 무드 경로는 스캔 창 안이
+    /// 전부 걸러지면 짧은 페이지를 내는데 그건 소진이 아니다. 무작위 폴백은 테이블에서 바로
+    /// 뜨므로 짧은 게 곧 소진이고, 콜드스타트는 창을 못 채우면 아예 빈 리스트를 낸다.
+    /// 판단 근거가 셋 다 달라서 만든 쪽이 답을 같이 넘긴다.
+    private record GenrePage(List<Track> tracks, Map<Long, FeedItem.SimilarTo> similar, boolean moreBelow) {
     }
 
     private GenrePage genreTracks(Long userId, FeedCursor cursor) {
+        // 디깅 성향을 끈 유저는 개인화 두 경로를 통째로 건너뛴다. 콜드스타트도 안 태운다 —
+        // 그건 커뮤니티 인기순이라 "제약 없는 무작위"라는 약속과 다르다.
+        if (!diggingModeOn(userId)) {
+            log.info("[feed] userId={} offset={} source=off size=0", userId, cursor.genreOffset());
+            List<Track> random = new ArrayList<>(trackRepository.findRandomTracksExceptHyped(
+                    userId, FeedService.FETCH_LIMIT, cursor.genreOffset(), cursor.seed()));
+            return new GenrePage(random, Map.of(), random.size() == FETCH_LIMIT);
+        }
         List<Long> ordered = moodRecommender.orderedTrackIds(userId, FETCH_LIMIT, cursor.genreOffset());
         String source = "mood";
         // 하입이 없으면(게스트·신규) 무드가 성립하지 않는다. 그 자리를 무작위가 아니라
@@ -102,15 +132,39 @@ public class FeedService {
         log.info("[feed] userId={} offset={} source={} size={}", userId, cursor.genreOffset(),
                 ordered.isEmpty() ? "random" : source, ordered.size());
         if (ordered.isEmpty()) {
-            return new GenrePage(new ArrayList<>(trackRepository.findByGenreIdsExceptHypedTrackWithLimitAndOffset(
-                    userId, FeedService.FETCH_LIMIT, cursor.genreOffset(), cursor.seed())), Map.of());
+            List<Track> random = new ArrayList<>(trackRepository.findRandomTracksExceptHyped(
+                    userId, FeedService.FETCH_LIMIT, cursor.genreOffset(), cursor.seed()));
+            return new GenrePage(random, Map.of(), random.size() == FETCH_LIMIT);
         }
         // id 순서가 곧 정렬 순서다. IN 절 결과는 순서를 보장하지 않으므로 여기서 다시 세운다.
         Map<Long, Track> byId = trackRepository.findAllByIdInFetchGenre(ordered).stream()
                 .collect(Collectors.toMap(Track::getId, Function.identity()));
         List<Track> tracks = ordered.stream().map(byId::get).filter(Objects::nonNull)
                 .collect(Collectors.toCollection(ArrayList::new));
-        return new GenrePage(tracks, "mood".equals(source) ? similarTo(userId, ordered) : Map.of());
+        // **페이지 안에서 순서를 섞는다.** 무드 정렬은 시드별 순번으로 내보내서 그대로 두면
+        // [A1,B1,C1][A2,B2,C2]... 모양이 된다. 같은 하입 곡이 늘 같은 자리에 서고 유사도가
+        // 페이지 내내 한 방향으로만 내려가서, 뒤로 갈수록 힘이 빠지는 느낌이 난다.
+        //
+        // 어떤 곡이 이 페이지에 들어갈지는 이미 정해졌고 순서만 바꾸므로 시드별 몫(10/10/10)은
+        // 그대로다. 커서의 seed와 오프셋으로 씨앗을 만들어 **같은 요청이면 같은 순서**가 나온다 —
+        // 매번 다르게 섞으면 같은 페이지를 다시 받았을 때 곡이 겹치거나 빠진다.
+        //
+        // **앞 SEEDS칸은 안 섞는다.** SQL이 rn 순으로 내보내므로 그 자리는 하입 곡마다 가장 가까운
+        // 한 곡씩, 이 페이지에서 제일 좋은 카드다. 전부 섞으면 몇 칸 보고 나가는 유저가 그걸 못 본다.
+        // 앞에서 시드 셋이 이미 한 번씩 나오므로 첫인상이 한 곡에 쏠리지도 않는다.
+        //
+        // 콜드스타트는 안 섞는다. 거기는 반응이 많은 곡이 앞에 서는 게 규칙이고, 그걸 지키려고
+        // 그리디 순서를 일부러 되돌려 놓은 자리다(ColdStartRecommender.orderedTrackIds).
+        if ("mood".equals(source)) {
+            int head = Math.min(MoodRecommender.SEEDS, tracks.size());
+            Collections.shuffle(tracks.subList(head, tracks.size()),
+                    new Random(cursor.seed() * 31L + cursor.genreOffset()));
+        }
+        // 콜드스타트는 창(WINDOW)을 못 채우면 빈 리스트를 내므로 길이로 판단해도 맞다.
+        boolean moreBelow = "mood".equals(source)
+                ? moodRecommender.hasMoreBelow(FETCH_LIMIT, cursor.genreOffset())
+                : tracks.size() == FETCH_LIMIT;
+        return new GenrePage(tracks, "mood".equals(source) ? similarTo(userId, ordered) : Map.of(), moreBelow);
     }
 
     /// 무드로 뽑힌 곡마다 "가장 가까운 내 하입 곡"을 붙인다. 콜드스타트·무작위는 부르지 않는다 —
