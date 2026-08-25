@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnDefault;
 
 import java.time.Instant;
 
@@ -27,6 +28,15 @@ public class User extends BaseTimeEntity {
     @Column(name = "is_onboarding_complete", nullable = false)
     private Boolean isOnboardingComplete = false;
 
+    /// 디깅 성향. 켜져 있으면 피드가 하입한 곡과 무드가 가까운 순으로 오고, 꺼져 있으면
+    /// 제약 없는 무작위로 온다. **기본값은 켜짐이라 지금 동작이 그대로 유지된다.**
+    ///
+    /// `@ColumnDefault`가 필요한 이유는 이미 행이 있는 테이블에 NOT NULL 컬럼을 붙이기
+    /// 때문이다. DEFAULT 없이는 ddl-auto=update의 ALTER TABLE이 실패해 앱이 안 뜬다.
+    @ColumnDefault("true")
+    @Column(name = "digging_mode", nullable = false)
+    private Boolean diggingMode = true;
+
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
@@ -49,5 +59,9 @@ public class User extends BaseTimeEntity {
 
     public void completeOnboarding() {
         this.isOnboardingComplete = true;
+    }
+
+    public void changeDiggingMode(boolean enabled) {
+        this.diggingMode = enabled;
     }
 }

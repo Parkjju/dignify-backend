@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
@@ -27,6 +28,12 @@ public class UserHypeTrack extends BaseTimeEntity {
     @JoinColumn(name = "track_id", updatable = false, nullable = false)
     @OnDelete(action = OnDeleteAction.CASCADE)
     private Track track;
+
+    /// 유저가 추천 기준으로 직접 고정한 곡인지. 하나라도 있으면 `MoodRecommender`가
+    /// 최근 하입 대신 이것만 시드로 쓴다. User.diggingMode와 같은 이유로 DEFAULT가 필요하다.
+    @ColumnDefault("false")
+    @Column(name = "is_seed", nullable = false)
+    private Boolean isSeed = false;
 
     private UserHypeTrack(User user, Track track) {
         this.user = user;

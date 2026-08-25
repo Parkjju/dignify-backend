@@ -3,9 +3,11 @@ package com.rta.dignify.controller;
 import com.rta.dignify.dto.DeviceTokenRegister;
 import com.rta.dignify.dto.hype.HypeListResponse;
 import com.rta.dignify.dto.stats.UserStatsResponse;
+import com.rta.dignify.dto.user.DiggingModeUpdateRequest;
 import com.rta.dignify.dto.user.NicknameUpdateRequest;
 import com.rta.dignify.dto.user.NicknameUpdateResponse;
 import com.rta.dignify.dto.user.PreferGenreUpdateRequest;
+import com.rta.dignify.dto.user.SeedTracksUpdateRequest;
 import com.rta.dignify.dto.user.UserProfileResponse;
 import com.rta.dignify.service.DeviceTokenService;
 import com.rta.dignify.service.HypeService;
@@ -45,6 +47,19 @@ public class UserController {
     @PostMapping("/me/onboarding/complete")
     public void completeOnboarding(@AuthenticationPrincipal Long userId) {
         userService.completeOnboarding(userId);
+    }
+
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PatchMapping("/me/digging-mode")
+    public void changeDiggingMode(@AuthenticationPrincipal Long userId, @RequestBody @Valid DiggingModeUpdateRequest request) {
+        userService.changeDiggingMode(userId, request);
+    }
+
+    /// 추천 기준 곡 고정. 빈 배열이 해제다.
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PutMapping("/me/seeds")
+    public void changeSeedTracks(@AuthenticationPrincipal Long userId, @RequestBody @Valid SeedTracksUpdateRequest request) {
+        userService.changeSeedTracks(userId, request);
     }
 
     @PutMapping("/me/genres")

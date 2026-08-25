@@ -12,7 +12,10 @@ import com.rta.dignify.global.exception.BusinessException;
 import com.rta.dignify.global.exception.ErrorCode;
 import com.rta.dignify.global.util.ProfanityFilter;
 import com.rta.dignify.repository.GenreRepository;
+import com.rta.dignify.dto.user.DiggingModeUpdateRequest;
+import com.rta.dignify.dto.user.SeedTracksUpdateRequest;
 import com.rta.dignify.repository.UserGenreRepository;
+import com.rta.dignify.repository.UserHypeTrackRepository;
 import com.rta.dignify.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -26,13 +29,15 @@ public class UserService {
     private final UserRepository userRepository;
     private final UserGenreRepository userGenreRepository;
     private final GenreRepository genreRepository;
+    private final UserHypeTrackRepository userHypeTrackRepository;
 
     @Transactional(readOnly = true)
     public UserProfileResponse getUserProfile(Long userId) {
         User user = userRepository.getReferenceById(userId);
         List<GenreResponse> genreList = userGenreRepository.findUserGenresByUserId(userId).stream().map((genre) -> GenreResponse.from(genre.getGenre())).toList();
 
-        return new UserProfileResponse(user.getNickname(), user.getIsOnboardingComplete(), genreList);
+        return new UserProfileResponse(user.getNickname(), user.getIsOnboardingComplete(), genreList,
+                Boolean.TRUE.equals(user.getDiggingMode()));
     }
 
     @Transactional
@@ -53,6 +58,21 @@ public class UserService {
     public void completeOnboarding(Long userId) {
         User user = userRepository.getReferenceById(userId);
         user.completeOnboarding();
+    }
+
+    @Transactional
+    public void changeDiggingMode(Long userId, DiggingModeUpdateRequest request) {
+        userRepository.getReferenceById(userId).changeDiggingMode(request.enabled());
+    }
+
+    /// 추천 기준 곡을 통째로 갈아 끼운다. 지우고 다시 세우는 편이 차집합을 계산하는 것보다
+    /// 짧고, 두 UPDATE가 한 트랜잭션 안이라 중간 상태가 밖에서 보이지 않는다.
+    @Transactional
+    public void changeSeedTracks(Long userId, SeedTracksUpdateRequest request) {
+        userHypeTrackRepository.clearSeeds(userId);
+        if (!request.trackIds().isEmpty()) {
+            userHypeTrackRepository.markSeeds(userId, request.trackIds());
+        }
     }
 
     @Transactional

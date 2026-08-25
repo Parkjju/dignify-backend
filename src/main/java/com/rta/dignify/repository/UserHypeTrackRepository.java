@@ -5,6 +5,7 @@ import com.rta.dignify.dto.stats.ArtistCount;
 import com.rta.dignify.dto.stats.GenreCount;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -76,4 +77,16 @@ public interface UserHypeTrackRepository extends JpaRepository<UserHypeTrack, Lo
     WHERE uht.track.id IN :trackIds AND uht.user.id = :userId
     """)
     Set<Long> findHypedTrackIds(@Param("userId") Long userId, @Param("trackIds") List<Long> trackIds);
+
+    /// 선택을 통째로 갈아 끼운다. 고른 개수와 상관없이 UPDATE 두 번으로 끝난다 —
+    /// 엔티티를 하나씩 불러 고치면 스무 곡을 골랐을 때 스무 번 오간다.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE UserHypeTrack uht SET uht.isSeed = FALSE WHERE uht.user.id = :userId AND uht.isSeed = TRUE")
+    void clearSeeds(@Param("userId") Long userId);
+
+    /// 하입하지 않은 곡 id가 섞여 와도 조건에 안 걸려 조용히 무시된다.
+    /// **반환값이 곧 실제로 고정된 수**라 호출부가 요청과 어긋났는지 확인할 수 있다.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE UserHypeTrack uht SET uht.isSeed = TRUE WHERE uht.user.id = :userId AND uht.track.id IN :trackIds")
+    int markSeeds(@Param("userId") Long userId, @Param("trackIds") List<Long> trackIds);
 }

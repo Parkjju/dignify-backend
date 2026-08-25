@@ -4,5 +4,5 @@ import com.rta.dignify.dto.genre.GenreResponse;
 
 import java.util.List;
 
-public record UserProfileResponse(String nickname, boolean isOnboardingComplete, List<GenreResponse> genres) {
+public record UserProfileResponse(String nickname, boolean isOnboardingComplete, List<GenreResponse> genres, boolean diggingMode) {
 }
