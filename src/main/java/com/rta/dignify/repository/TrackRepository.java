@@ -19,13 +19,30 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
     ///
     /// 장르 단계(GENRE)와 전체 단계(GENERAL)가 이걸로 같은 쿼리를 쓴다. 커서의 두 단계는
     /// 그대로 두는데, 형식을 바꾸면 앱이 들고 있는 커서가 전부 깨지기 때문이다.
-    @Query(value = "SELECT t.* FROM tracks t " +
-            "LEFT JOIN users_hype_tracks uht ON t.track_id = uht.track_id AND uht.user_id = :userId " +
-            "LEFT JOIN curation_tracks c ON c.track_id = t.track_id AND c.is_active IS TRUE " +
-            "WHERE uht.user_hype_track_id IS NULL AND t.is_active IS TRUE AND c.curation_track_id IS NULL " +
-            "ORDER BY md5(t.track_id::text || ':' || CAST(:seed AS text)) " +
-            "LIMIT :limit " +
-            "OFFSET :offset", nativeQuery = true)
+    /// **LEFT JOIN + IS NULL을 NOT EXISTS로 바꿨다(2026-08-26).** 앞 형태는 플래너가 Nested Loop으로
+    /// 풀어서 tracks 9만 6천 행 각각에 `users_hype_tracks` 인덱스 조회를 한 번씩 걸었다. 하입이 46곡뿐인
+    /// 유저를 거르려고 9만 6천 번을 조회한 셈이고, 버퍼 접근 202,770개 중 191,823개가 여기서 나왔다.
+    /// NOT EXISTS면 46행을 해시에 올려 한 번에 거른다(Hash Anti Join).
+    ///
+    /// **정렬용 부분질의는 track_id만 뽑는다.** 앞 형태는 934바이트짜리 행을 9만 6천 개 만들어 놓고
+    /// 그중 30개만 남겼다. 좁은 행으로 정렬한 뒤 바깥에서 다시 조인하면 그 몫이 빠진다.
+    ///
+    /// 로컬 실측(tracks 95,895행, 3회 중앙값): 병렬 워커가 붙으면 170ms → 42ms, 안 붙으면 142ms → 94ms다.
+    /// **버퍼는 조건과 무관하게 202,770 → 11,073으로 18배 준다.** 0.6GB 인스턴스에서는 이쪽이 더 중요하다 —
+    /// 캐시를 20만 번 두드리던 것이 1만 번이 되면 같이 도는 다른 쿼리가 덜 밀려난다.
+    ///
+    /// **바깥 `ORDER BY s.k`를 지우지 말 것.** 지우면 페이지 안 30곡의 순서가 정해지지 않는다.
+    /// 오프셋 0/30/600/1800/90000에서 앞 형태와 순서까지 같은 결과가 나오는 것을 확인했다.
+    ///
+    /// `md5` 전 행 정렬은 그대로 남는다. 시드가 요청마다 바뀌므로 어떤 인덱스도 이 정렬을 대신할 수 없고,
+    /// 오프셋이 깊어져도 비용이 안 준다. 그걸 없애려면 커서 설계를 바꿔야 한다.
+    @Query(value = "SELECT t.* FROM tracks t JOIN (" +
+            "SELECT t2.track_id, md5(t2.track_id::text || ':' || CAST(:seed AS text)) AS k FROM tracks t2 " +
+            "WHERE t2.is_active IS TRUE " +
+            "AND NOT EXISTS (SELECT 1 FROM users_hype_tracks uht WHERE uht.track_id = t2.track_id AND uht.user_id = :userId) " +
+            "AND NOT EXISTS (SELECT 1 FROM curation_tracks c WHERE c.track_id = t2.track_id AND c.is_active IS TRUE) " +
+            "ORDER BY k LIMIT :limit OFFSET :offset" +
+            ") s ON s.track_id = t.track_id ORDER BY s.k", nativeQuery = true)
     List<Track> findRandomTracksExceptHyped(@Param("userId") Long userId, @Param("limit") Integer limit, @Param("offset") Integer offset, @Param("seed") Integer seed);
 
     /// 검색어와 컬럼 양쪽에서 라틴 발음기호를 뗀다. "rosalia"로 쳐도 "ROSALÍA"가 걸리게.
