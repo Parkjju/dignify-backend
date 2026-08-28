@@ -13,19 +13,23 @@
 | Framework | Spring Boot 3.5, Spring Security, Spring Data JPA |
 | Database | PostgreSQL (Cloud SQL) |
 | Cloud | GCP Cloud Run, Artifact Registry |
-| Auth | Apple Sign In (JWKS verification), JWT (HS256) |
+| Auth | Apple Sign In / Google Sign-In (both ID-token verified server-side), JWT (HS256) |
+| Push | APNs direct (pushy) + FCM (firebase-admin) |
 | Music Source | iTunes Lookup API |
+| Recommendation | CLAP audio embeddings → 32-dim PCA vectors in `track_vectors` |
 | Build | Gradle |
 
 ---
 
 ## Key Implementation Highlights
 
-### 1. Apple Sign In with JWKS Verification
-Implemented Apple identity token verification without relying on third-party libraries. Fetches Apple's public key set (JWKS) via `JWKSource`, validates the RS256 signature, and verifies `iss`, `aud`, and `exp` claims directly.
+### 1. Sign In with Apple and Google (JWKS Verification)
+Both providers' identity tokens are verified server-side without an auth SDK: fetch the provider's public key set (JWKS) via `JWKSource`, validate the RS256 signature, and check `iss`, `aud` and `exp` directly.
 
-- JWT signing key cached for 24 hours to avoid repeated network calls to Apple's JWKS endpoint
+- Signing keys cached for 24 hours to avoid a network round trip to the JWKS endpoint per login
 - All verification failures mapped to typed `ErrorCode` values for consistent error responses
+- Google's `aud` is a configured value, not a constant — the Android app's *web* OAuth client ID has to be swappable between debug and release. An unset value leaves the app bootable and only fails logins, so a deploy never breaks on a missing secret
+- The two clients are deliberately not pulled into a shared parent: what they share is the order of nimbus calls, while what differs (Google issues both `accounts.google.com` and `https://accounts.google.com`, Apple has no `email_verified`) would just push branching up into the parent
 
 ### 2. JWT Authentication Filter Chain
 Built a stateless authentication layer using Spring Security:
@@ -34,14 +38,24 @@ Built a stateless authentication layer using Spring Security:
 - `JwtAuthenticationEntryPoint` handles authentication failures at the filter level — before the MVC dispatcher — and writes structured JSON error responses directly
 - `Clock` injection into `JwtProvider` enables deterministic unit tests for token expiry scenarios without mocking the system clock
 
-### 3. Feed Pagination with Opaque Cursor
-Designed a two-phase feed algorithm that prioritizes user-preferred genres (70%) before falling back to general tracks (30%):
+### 3. Mood-Ordered Feed (Vector Similarity)
+The feed used to be a two-phase genre filter — preferred genres first, general tracks as padding. Since the genre picker was removed from the app (2026-08-24) the server no longer reads `user_genres`: every user sees the whole catalog, and only the **ordering** changes.
 
-- Phase 1: `INNER JOIN user_genres` to filter tracks matching user preferences
-- Phase 2: `LEFT JOIN user_genres ... WHERE IS NULL` anti-join pattern to serve non-preferred tracks
-- Cursor encodes `(phase, genreOffset, generalOffset, seed)` as a Base64 opaque string — client never parses the internals
-- Native queries with explicit `LIMIT`/`OFFSET` binding (JPQL doesn't support literal `LIMIT`)
-- Ordering: `ORDER BY COALESCE(c.priority, 0) DESC, md5(track_id || ':' || seed)` — curated tracks are boosted to the top via a `LEFT JOIN curation_tracks`, and the rest are shuffled by a per-session seed hashed with the track id. The seed makes ordering stable within a paging session but different across sessions, and hashing per-track breaks the artist clustering that a plain `ORDER BY id` produces
+**Track vectors.** Each preview is embedded with CLAP (three 10-second windows, averaged), reduced to 32 dimensions by PCA, and L2-normalised so a dot product *is* cosine similarity. They live in `track_vectors` — 32 `real` columns, no JPA entity, loaded by a script. 32 dims is a latency choice, not a quality one: 64 scored the same but pushed a 3-seed scan to 226ms.
+
+**Seeds, not an average.** The 3 most recent hypes (or the tracks the user pinned via `PUT /users/me/seeds`) each act as an independent seed, and tracks are ranked by `GREATEST(dot(v, seed0), …)`. Averaging the seeds would point at the centre of mood space — a track with no character at all.
+
+**Per-seed quota.** `ROW_NUMBER() OVER (PARTITION BY <winning seed>)` then `ORDER BY rn`. Ranking by similarity alone lets whichever seed sits in a dense region take every slot on the page.
+
+**Filter outside the scan.** Inactive, already-hyped, curated and near-duplicate tracks (`sim >= 0.95` — remasters, instrumentals and covers were 24.7% of nearest neighbours) are removed in an outer query. Joining them into the dot-product scan measured +67ms (tracks) and +203ms (hypes) in production.
+
+**Scan window `K = (limit + offset) * 6 + 120`.** Because filtering happens *after* the top-K cut, K has to be generous: with K=40 a seed sitting inside a cover cluster had only 2 of its top 40 survive. K is nearly free — the cost is reading all ~85k vectors, not the sort heap (K=300 → 23.4ms, K=1740 → 25.8ms).
+
+**A short page is not an empty catalog.** Exhaustion is decided by comparing K against `count(*)` on `track_vectors`, never by page length — a page can come back short simply because the scan window was filtered out, and cutting the cursor there would end that user's feed with 20k tracks still below.
+
+**Three paths, one response shape.** Mood ordering → `ColdStartRecommender` (guests and users with no hype yet: the top-120 tracks by weighted engagement, shuffled to 60, then a greedy pick of 30 that are mood-*distant* from each other — the raw popularity top 30 averages 0.33 pairwise similarity, so the first screen would otherwise be one colour) → plain randomised order. Users who turn digging mode off (`PATCH /users/me/digging-mode`) skip straight to random. Each request logs which path it took.
+
+**Cursor.** `(phase, genreOffset, generalOffset, seed)` Base64-encoded as an opaque string; the client never parses it. The offset advances by a full page even when the page came back short, so a narrow window can't make consecutive requests circle the same spot.
 
 ### 4. Asynchronous Cron Job with `@Async`
 Implemented a long-running iTunes track collection job that runs without blocking the HTTP thread:
@@ -74,6 +88,13 @@ PostgreSQL does not auto-create indexes on foreign key columns (unlike MySQL). E
 | `idx_listened_track_track_id` | `listened_tracks` | `track_id` | Cascade / analytics |
 | `idx_user_auth_user_id` | `user_auth` | `user_id` | Auth provider lookup per login |
 | `idx_user_token_user_id` | `user_tokens` | `user_id` | Token validation per request |
+| `idx_artist_request_user_id` | `artist_requests` | `user_id` | My submitted requests |
+| `idx_device_token_user_id` | `user_device_tokens` | `user_id` | Push fan-out per user |
+
+Two index families sit outside JPA because `ddl-auto` cannot express them:
+
+- **Trigram GIN indexes for search.** The search query runs `translate(LOWER(col), …) LIKE '%kw%'` over four columns, and a leading `%` cannot use a B-tree, so every search scanned the whole table. Four `pg_trgm` GIN indexes on the exact same expression fixed it — 314ms → 2.0ms for a worst-case keyword locally, at 18MB total (18% of the table). The index expression must match `TrackRepository.FOLD_FROM/FOLD_TO` character for character; a mismatch silently falls back to a sequential scan instead of erroring.
+- **A partial index on `picks`** — the list query filters `WHERE is_deleted = FALSE`, which `@Index` cannot express — and the whole of `track_vectors`, which has no entity at all.
 
 ### 8. Test-Gated CI/CD to Cloud Run
 A GitHub Actions workflow (`.github/workflows/deploy.yml`) builds, tests, and deploys on every push to `main`:
@@ -82,7 +103,7 @@ A GitHub Actions workflow (`.github/workflows/deploy.yml`) builds, tests, and de
 - **`deploy` job** (`needs: test`) authenticates to GCP via **Workload Identity Federation** (OIDC, `id-token: write`) — no long-lived service account keys stored in the repo.
 - Builds a `linux/amd64` image, pushes to Artifact Registry tagged with the commit SHA, and rolls it out to Cloud Run.
 
-> **Known limitation:** the CI Postgres uses the same `ddl-auto=create-drop` as tests, so the schema is regenerated from JPA entities each run. This validates that entities map cleanly, but does **not** catch drift against the production schema — there are no migrations yet. A Flyway/Liquibase baseline is the natural next step.
+> **Known limitation:** the CI Postgres uses the same `ddl-auto=create-drop` as tests, so the schema is regenerated from JPA entities each run, while production runs `ddl-auto=update`. This validates that entities map cleanly, but does **not** catch drift against the production schema — there are no migrations yet, and hand-written DDL (trigram indexes, `track_vectors`) is invisible to both. A Flyway/Liquibase baseline is the natural next step.
 
 ---
 
@@ -94,12 +115,18 @@ Wrote tests at multiple layers with a clear separation of concerns between unit,
 |---|---|---|
 | `JwtProviderTest` | Unit (`@ExtendWith`) | Token generation/validation, expiry via injected `Clock` |
 | `AppleAuthClientTest` | Unit (`@ExtendWith`) | 8 scenarios: malformed token, algorithm mismatch, empty JWK set, wrong signing key, invalid claims, expiry, happy path |
+| `GoogleAuthClientTest` | Unit (`@ExtendWith`) | Google ID token: signature, `aud`/`iss` mismatch, expiry |
+| `MoodRecommenderTest` | Unit | Generated scan SQL: parameter order, placeholder count, per-seed quota, where each exclusion is applied, scan window depth, `bestSeed` |
+| `ColdStartRecommenderTest` | Unit | Pool query conditions, greedy spread picks the most distant next track, window boundary → empty list |
+| `OnboardingServiceTest` | Unit | One HIGH/LOW pair per axis, axis with a missing pole skipped, pair order shuffled, random pick within a pole |
 | `GenreServiceTest` | Unit (Mockito) | Locale-based genre name selection (ko / en fallback) |
 | `GlobalExceptionHandlerTest` | Slice (`@WebMvcTest`) | All 5 exception handlers mapped to correct HTTP status and `ErrorCode` |
 | `JwtAuthenticationTest` | Integration (`@SpringBootTest`) | Filter chain: missing token / malformed / expired / valid / public path |
 | `AuthServiceIntegrationTest` | Integration (`@SpringBootTest`) | Full auth lifecycle: sign-in → token rotation → soft-delete → re-registration cascade |
-| `TrackRepositoryTest` | Slice (`@DataJpaTest`) | Feed queries: genre filter (inner join), general filter (anti-join), hype exclusion (multi-user), limit/offset, `isActive` |
-| `UserHypeTrackRepositoryTest` | Slice (`@DataJpaTest`) | Keyset pagination, exists/find queries |
+| `TrackRepositoryTest` | Slice (`@DataJpaTest`) | Feed queries: limit/offset, `isActive`, `user_genres` no longer narrows candidates, search, ko enrichment |
+| `UserHypeRepositoryTest` | Slice (`@DataJpaTest`) | Keyset pagination, exists/find queries |
+| `OnboardingCandidateRepositoryTest` | Slice (`@DataJpaTest`) | Deactivated candidates excluded |
+| `FeedServiceTest` | Slice (`@DataJpaTest`) | Path selection (mood / cold start / random), seed pinning, digging mode off, hype exclusion, page shuffle stable across refetch |
 | `HypeServiceTest` | Integration (`@SpringBootTest`) | Hype register / delete / duplicate detection |
 
 ### Notable Testing Patterns
@@ -126,26 +153,40 @@ Wrote tests at multiple layers with a clear separation of concerns between unit,
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/auth/apple` | Sign in with Apple identity token |
+| POST | `/auth/google` | Sign in with Google ID token (Android) |
 | POST | `/auth/refresh` | Rotate refresh token, issue new access token |
 | POST | `/auth/logout` | Invalidate refresh token |
 | POST | `/auth/withdraw` | Soft-delete account, cascade token cleanup |
 | GET | `/genres` | List genres that have active tracks (i18n: `Accept-Language` ko/en) |
-| GET | `/feed` | Paginated track feed with opaque cursor |
-| GET | `/feed/search` | Keyword search across track/artist name |
+| GET | `/feed` | Paginated track feed, mood-ordered, opaque cursor (guests allowed) |
+| GET | `/feed/curation` | This week's curated set — same for everyone, no paging |
+| GET | `/feed/search` | Keyword search across track/artist name (accent- and quote-folded) |
+| GET | `/onboarding/candidates` | Two-choice sound rounds, one pair per mood axis |
 | GET | `/tracks/{trackId}` | Track detail + first 5 users who hyped it |
 | POST | `/tracks/{trackId}/hype` | Hype a track |
 | DELETE | `/tracks/{trackId}/hype` | Remove hype |
 | POST | `/tracks/{trackId}/listen` | Record a listen event (fire-and-forget, append-only) |
 | GET | `/users/me` | User profile |
 | PATCH | `/users/me/nickname` | Update nickname |
-| PUT | `/users/me/genres` | Replace preferred genres (0–3) |
+| PUT | `/users/me/genres` | Replace preferred genres — kept for older clients; the feed no longer reads them |
+| PATCH | `/users/me/digging-mode` | Toggle personalisation off (feed falls back to random) |
+| PUT | `/users/me/seeds` | Pin the tracks recommendations are based on (empty array clears) |
 | POST | `/users/me/onboarding/complete` | Mark onboarding as done |
 | GET | `/users/me/hypes` | Paginated hype history (keyset pagination) |
 | GET | `/users/me/stats` | Listening/hype aggregates for the digging profile (`range=all\|week`) |
-| POST | `/users/me/device-token` | Register an APNs device token |
+| POST | `/users/me/device-token` | Register a push token (APNs or FCM, by platform) |
+| GET | `/picks` | Shared track collections, keyset cursor (`mine=true` for my own) |
+| POST | `/picks` | Create a pick from 1–30 tracks |
+| GET | `/picks/{pickId}` | Tracks in a pick, in feed response shape |
+| DELETE | `/picks/{pickId}` | Delete my pick |
+| PUT/DELETE | `/picks/{pickId}/reaction` | Set or clear my emoji reaction (5 allowed) |
+| PUT | `/picks/{pickId}/title` | Rename my pick (profanity-filtered) |
+| POST | `/reports` | Report a track or pick |
 | POST | `/artist-requests` | Request an artist to be added to the catalog |
 | GET | `/artist-requests` | My submitted requests |
 | DELETE | `/artist-requests/{id}` | Cancel my own request |
+
+Internal routes are guarded by an `X-Cron-Secret` header instead of a JWT: `/internal/cron/*` (collection, Korean-name enrichment) checks `CRON_SECRET`, while `/internal/admin/*` (curation sets, artist requests, backfill batches, push) checks a separate `ADMIN_SECRET` that falls back to the cron one. The admin routes back a single-page UI served at `/internal/admin.html`.
 
 ---
 
@@ -160,10 +201,10 @@ Wrote tests at multiple layers with a clear separation of concerns between unit,
 │  ┌──────────────────────┐     ┌───────────────────────────┐    │
 │  │  Artifact Registry   │     │       Cloud Run           │    │
 │  │  (Docker Image)      │────▶│   Spring Boot 3.5 / Java  │    │
-│  └──────────────────────┘     │   (scales to 0 on idle)   │    │
+│  └──────────────────────┘     │   1Gi · min 1 / max 4     │    │
 │                               └────────────┬──────────────┘    │
-│                                            │ Unix Socket        │
-│                                            │ (no public IP)     │
+│                                            │ Java connector     │
+│                                            │ mTLS, no public IP │
 │                               ┌────────────▼──────────────┐    │
 │                               │   Cloud SQL               │    │
 │                               │   PostgreSQL 16           │    │
@@ -173,11 +214,13 @@ Wrote tests at multiple layers with a clear separation of concerns between unit,
          ▲
          │ HTTPS
          │
-  ┌──────┴──────┐
-  │  iOS Client │
-  │  (SwiftUI)  │
-  └─────────────┘
+  ┌───────────────┐
+  │  iOS (SwiftUI)│
+  │  + Android    │
+  └───────────────┘
 ```
+
+> **Why `min-instances 1` rather than scale-to-zero?** A cold start takes ~22 seconds — JVM boot plus the first Cloud SQL connection — and at this traffic level almost every request would pay it. Memory is 1Gi because 512Mi was OOM-killed roughly once a day; the app's baseline footprint is flat at about half of 1Gi regardless of traffic.
 
 ### Data Ingestion Pipeline (Local → Cloud SQL)
 
@@ -212,7 +255,8 @@ iTunes API blocks GCP datacenter IPs. The collection job runs locally and writes
 
 ```
 src/main/java/com/rta/dignify/
-├── client/          # External API clients (Apple JWKS, iTunes Lookup)
+├── client/          # External API clients (Apple JWKS, Google, iTunes Lookup)
+├── config/          # APNs / FCM client beans
 ├── controller/      # REST controllers
 ├── domain/          # JPA entities
 ├── dto/             # Request/response DTOs
@@ -223,7 +267,9 @@ src/main/java/com/rta/dignify/
 │   ├── security/    # JwtAuthenticationFilter, JwtAuthenticationEntryPoint
 │   └── util/        # TokenHasher (SHA-256)
 ├── repository/      # Spring Data JPA repositories
-└── service/         # Business logic, cron job orchestration
+└── service/
+    ├── cron/        # Collection and enrichment batches
+    └── *.java       # Feed, mood/cold-start recommenders, picks, push, stats
 ```
 
 ---
@@ -260,6 +306,15 @@ dgrun() (
   ./gradlew bootRun
 )
 ```
+
+### Tests
+
+```bash
+docker compose exec postgres psql -U dignify -d dignify -c 'CREATE DATABASE dignify_test'  # once
+./gradlew test
+```
+
+Tests run against real Postgres, not H2 — the feed SQL is PostgreSQL-specific and H2 also differs on cascade and flush ordering. They use a **separate `dignify_test` database** because `ddl-auto=create-drop` would otherwise take the development data with it (it did, once).
 
 ### Data ingestion (with Cloud SQL)
 
