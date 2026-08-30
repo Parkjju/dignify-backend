@@ -35,12 +35,10 @@ class MoodRecommenderTest {
     void 쿼리_플레이스홀더_개수() {
         for (int seedCount = 1; seedCount <= MoodRecommender.SEEDS; seedCount++) {
             for (int genreCount = 0; genreCount <= 13; genreCount++) {
-                for (int artistCount = 0; artistCount <= seedCount; artistCount++) {
-                    String sql = MoodRecommender.orderSql(seedCount, genreCount, artistCount, 40);
-                    // 내적(seed×차원) + 장르 + 하입 조인 userId + 아티스트 + limit + offset
-                    long expected = (long) seedCount * MoodRecommender.DIMS + genreCount + 1 + artistCount + 2;
-                    assertThat(sql.chars().filter(c -> c == '?').count()).isEqualTo(expected);
-                }
+                String sql = MoodRecommender.orderSql(seedCount, genreCount, 40);
+                // 내적(seed×차원) + 장르 + 하입 조인 userId + limit + offset
+                long expected = (long) seedCount * MoodRecommender.DIMS + genreCount + 1 + 2;
+                assertThat(sql.chars().filter(c -> c == '?').count()).isEqualTo(expected);
             }
         }
     }
@@ -48,7 +46,7 @@ class MoodRecommenderTest {
     @Test
     @DisplayName("정렬은 유사도 내림차순이고, 동점은 track_id로 갈린다")
     void 정렬_키() {
-        String sql = MoodRecommender.orderSql(3, 1, 1, 40);
+        String sql = MoodRecommender.orderSql(3, 1, 40);
         // 동점 정렬이 페이지마다 흔들리면 OFFSET 페이징이 곡을 건너뛰거나 중복시킨다.
         assertThat(sql).contains("ORDER BY sim DESC, track_id LIMIT 40");
         assertThat(sql).contains("ORDER BY rn, sim DESC, track_id LIMIT ? OFFSET ?");
@@ -61,7 +59,7 @@ class MoodRecommenderTest {
     void 시드별_라운드로빈() {
         // rn이 첫 정렬 키다. 시드별 1등끼리, 2등끼리 묶여 나가야 세 시드가 고르게 섞인다.
         // 유사도만으로 줄 세우면 밀집 지역에 있는 시드 하나가 페이지를 통째로 먹는다.
-        String sql = MoodRecommender.orderSql(3, 0, 0, 40);
+        String sql = MoodRecommender.orderSql(3, 0, 40);
         assertThat(sql).contains("ROW_NUMBER() OVER (PARTITION BY ");
         assertThat(sql).contains("ORDER BY rn, ");
 
@@ -75,7 +73,7 @@ class MoodRecommenderTest {
     @Test
     @DisplayName("장르는 스캔 안에서, 나머지 제외는 스캔 밖에서 건다")
     void 제외_조건_위치() {
-        String sql = MoodRecommender.orderSql(3, 1, 2, 40);
+        String sql = MoodRecommender.orderSql(3, 1, 40);
         int scanEnd = sql.indexOf(") c ");
 
         // 장르가 스캔 안에 있어야 곱셈 전에 행이 걸러진다(실측 43.9ms → 6.6ms).
@@ -84,9 +82,11 @@ class MoodRecommenderTest {
         assertThat(sql.indexOf("users_hype_tracks")).isGreaterThan(scanEnd);
         assertThat(sql.indexOf("curation_tracks")).isGreaterThan(scanEnd);
         assertThat(sql.indexOf("t.is_active")).isGreaterThan(scanEnd);
-        // 리마스터·커버(유사도 0.95↑)와 같은 아티스트는 정렬 앞자리를 통째로 먹는다.
+        // 리마스터·커버(유사도 0.95↑)는 정렬 앞자리를 통째로 먹는다.
         assertThat(sql).contains("c.sim < 0.95");
-        assertThat(sql).contains("t.artist_id NOT IN (?,?)");
+        // 시드 아티스트 제외는 2026-08-29에 뺐다 — 요청받은 적 없는 조건이었고,
+        // 활성 곡의 52.9%가 artist_id NULL이라 시드의 74%에서 걸리지도 않았다.
+        assertThat(sql).doesNotContain("artist_id");
     }
 
     @Test
@@ -94,9 +94,9 @@ class MoodRecommenderTest {
     void 장르_미선택() {
         // 빈 IN 절(`genre_id IN ()`)은 문법 오류이고, 있는 척 넘기면 후보가 0이 돼
         // 그 유저만 조용히 무드 정렬에서 빠진다.
-        assertThat(MoodRecommender.orderSql(3, 0, 1, 40)).doesNotContain("genre_id IN");
-        assertThat(MoodRecommender.orderSql(3, 1, 1, 40)).contains("genre_id IN (?)");
-        assertThat(MoodRecommender.orderSql(3, 3, 1, 40)).contains("genre_id IN (?,?,?)");
+        assertThat(MoodRecommender.orderSql(3, 0, 40)).doesNotContain("genre_id IN");
+        assertThat(MoodRecommender.orderSql(3, 1, 40)).contains("genre_id IN (?)");
+        assertThat(MoodRecommender.orderSql(3, 3, 40)).contains("genre_id IN (?,?,?)");
     }
 
     @Test

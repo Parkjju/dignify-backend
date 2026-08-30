@@ -1,7 +1,5 @@
 package com.rta.dignify.service;
 
-import com.rta.dignify.domain.Track;
-import com.rta.dignify.repository.TrackRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -10,7 +8,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -46,7 +43,6 @@ public class MoodRecommender {
     static final double DUPLICATE_SIM = 0.95;
 
     private final JdbcTemplate jdbcTemplate;
-    private final TrackRepository trackRepository;
 
     /// 이 페이지에 넣을 트랙 id를 무드 유사도 내림차순으로. **빈 리스트면 호출부는 종전
     /// 무작위 정렬로 간다** — 게스트, 하입이 없는 유저, 하입한 곡에 벡터가 없는 유저가 전부 여기로 빠진다.
@@ -65,18 +61,14 @@ public class MoodRecommender {
         // 지우면 SQL 조립과 그 테스트를 통째로 다시 써야 한다.
         // 대가는 스캔이 8만 5천 행 전체로 늘어나는 것이다(README 실측 6.6ms → 29ms).
         List<Long> genreIds = List.of();
-        List<Long> seedArtistIds = trackRepository.findAllById(
-                        seeds.stream().map(Seed::trackId).toList()).stream()
-                .map(Track::getArtistId).filter(Objects::nonNull).distinct().toList();
 
         List<Object> params = new ArrayList<>(List.of(flatten(seeds)));
         params.addAll(genreIds);                  // 선택 장르 (없으면 필터 자체가 빠진다)
         params.add(userId);                       // 하입 제외 조인
-        params.addAll(seedArtistIds);
         params.add(limit);
         params.add(offset);
         return jdbcTemplate.queryForList(
-                orderSql(seeds.size(), genreIds.size(), seedArtistIds.size(), scanWindow(limit, offset)),
+                orderSql(seeds.size(), genreIds.size(), scanWindow(limit, offset)),
                 Long.class, params.toArray());
     }
 
@@ -84,7 +76,7 @@ public class MoodRecommender {
     ///
     /// **페이지가 짧은 것과 곡이 없는 것은 다르다.** 유사도 순위는 벡터 전체를 0.95부터 0까지
     /// 한 줄로 덮는다. 짧은 페이지는 순위가 끝나서가 아니라 스캔 창(K) 안이 전부 걸러졌기
-    /// 때문이고(꺼진 곡·이미 하입·리마스터·같은 아티스트), 창 아래에는 곡이 그대로 있다.
+    /// 때문이고(꺼진 곡·이미 하입·큐레이션·리마스터), 창 아래에는 곡이 그대로 있다.
     ///
     /// 스캔에는 조건이 없어서 결과가 항상 `min(K, 벡터 수)`다. 그러니 **K가 벡터 수보다 작으면
     /// 스캔은 꽉 찼고, 아래에 남아 있다**는 뜻이다. 추가 조회 없이 이 비교 하나로 갈린다.
@@ -195,7 +187,7 @@ public class MoodRecommender {
     ///
     /// 정렬 키에 track_id를 덧붙이는 건 동점 때문이다. 같은 유사도가 페이지마다 다른 순서로
     /// 나오면 OFFSET 페이징이 곡을 건너뛰거나 중복시킨다.
-    static String orderSql(int seedCount, int genreCount, int seedArtistCount, int window) {
+    static String orderSql(int seedCount, int genreCount, int window) {
         // 시드별 내적을 s0..sN으로 뽑는 가장 안쪽 층. GREATEST를 **같은 층에서** 쓰면 별칭을 못 봐서
         // 내적 식을 두 번 적어야 하고, 그러면 8만 5천 행에 곱셈이 두 배로 붙는다. 그래서 한 겹 감싼다.
         String dotCols = IntStream.range(0, seedCount)
@@ -206,9 +198,6 @@ public class MoodRecommender {
         // 고른 장르가 없으면 필터를 통째로 뺀다 — 빈 IN 절은 후보를 0으로 만든다.
         String genreFilter = genreCount == 0 ? ""
                 : "WHERE genre_id IN (" + placeholders(genreCount) + ") ";
-        // 같은 아티스트는 정확하지만 이미 아는 걸 또 주는 것이다. 디깅 앱에선 추천이 아니다.
-        String artistFilter = seedArtistCount == 0 ? ""
-                : " AND (t.artist_id IS NULL OR t.artist_id NOT IN (" + placeholders(seedArtistCount) + "))";
         return "SELECT track_id FROM ("
                 + "SELECT t.track_id, c.sim, ROW_NUMBER() OVER (PARTITION BY " + bestSeedCase(seedCount)
                 + " ORDER BY c.sim DESC, t.track_id) AS rn FROM ("
@@ -219,7 +208,7 @@ public class MoodRecommender {
                 + "LEFT JOIN users_hype_tracks uht ON uht.track_id = t.track_id AND uht.user_id = ? "
                 + "LEFT JOIN curation_tracks cur ON cur.track_id = t.track_id AND cur.is_active IS TRUE "
                 + "WHERE t.is_active IS TRUE AND uht.user_hype_track_id IS NULL "
-                + "AND cur.curation_track_id IS NULL AND c.sim < " + DUPLICATE_SIM + artistFilter
+                + "AND cur.curation_track_id IS NULL AND c.sim < " + DUPLICATE_SIM
                 + ") r ORDER BY rn, sim DESC, track_id LIMIT ? OFFSET ?";
     }
 
