@@ -9,7 +9,6 @@ import com.rta.dignify.global.exception.ErrorCode;
 import com.rta.dignify.repository.ArtistRequestRepository;
 import com.rta.dignify.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,8 +19,6 @@ import java.util.List;
 public class ArtistRequestService {
     private final ArtistRequestRepository repository;
     private final UserRepository userRepository;
-    // apns.enabled=false(테스트)면 PushService 빈이 없으므로 선택 주입. ifAvailable로 no-op 처리.
-    private final ObjectProvider<PushService> pushService;
 
     @Transactional
     public ArtistRequestResponse create(Long userId, String artistName) {
@@ -48,12 +45,8 @@ public class ArtistRequestService {
     @Transactional
     public void resolve(Long id, RequestStatus status, String cancelReason) {
         ArtistRequest req = repository.findById(id).orElseThrow(() -> new BusinessException(ErrorCode.ARTIST_REQUEST_NOT_FOUND));
+        // ADDED여도 푸시를 안 보낸다 — 한 유저가 요청을 수십 건 넣으면 알림이 그만큼 울린다.
+        // 발송은 어드민 푸시 탭에서 userId로 직접, 요청 여러 건을 한 문장으로 묶어서.
         req.resolve(status, cancelReason);
-
-        // ADDED일 때 cancelReason은 거절 사유가 아니라 푸시 본문으로 나간다. 앱은 ADDED 행의
-        // 이 값을 화면에 안 쓰므로, 운영자가 한마디 덧붙일 통로로 그대로 쓴다.
-        if (status == RequestStatus.ADDED) {
-            pushService.ifAvailable(p -> p.sendArtistAdded(req.getUser().getId(), req.getArtistName(), cancelReason));
-        }
     }
 }

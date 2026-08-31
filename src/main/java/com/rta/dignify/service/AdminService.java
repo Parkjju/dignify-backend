@@ -84,7 +84,7 @@ public class AdminService {
     @Transactional(readOnly = true)
     public List<ArtistRequestItem> getPendingArtistRequests() {
         return artistRequestRepository.findByStatusWithUser(RequestStatus.PENDING).stream()
-                .map(ar -> new ArtistRequestItem(ar.getId(), ar.getArtistName(), ar.getUser().getNickname(), ar.getCreatedAt(),
+                .map(ar -> new ArtistRequestItem(ar.getId(), ar.getUser().getId(), ar.getArtistName(), ar.getUser().getNickname(), ar.getCreatedAt(),
                         trackRepository.countByIsActiveTrueAndArtistNameContainingIgnoreCase(ar.getArtistName())))
                 .toList();
     }

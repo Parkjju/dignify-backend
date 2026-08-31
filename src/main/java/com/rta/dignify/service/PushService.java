@@ -65,25 +65,6 @@ public class PushService {
     /// 알림 한 건 = 제목 + 본문. 무엇을 말할지는 여기까지고, 어떻게 보낼지는 렌더러가 맡는다.
     record Alert(Line title, Line body) { }
 
-    /// 요청한 아티스트가 추가됐음을 알린다. 문구는 loc-key로 보내고 앱이 기기 언어로 렌더한다.
-    ///
-    /// note를 주면 본문만 그 문구로 바뀐다("일부 앨범만 올라왔어요" 같은 안내). 번역은 안 되니
-    /// 보내는 사람이 유저 언어를 보고 써야 한다. 제목은 그대로 loc-key라 기기 언어로 나온다.
-    public void sendArtistAdded(Long userId, String artistName, String note) {
-        Alert alert = artistAddedAlert(artistName, note);
-
-        for (UserDeviceToken t : tokenRepository.findByUserId(userId)) {
-            send(t, alert);
-        }
-    }
-
-    static Alert artistAddedAlert(String artistName, String note) {
-        Line body = (note == null || note.isBlank())
-                ? Line.loc("push_artist_added_body")
-                : Line.raw(note);
-        return new Alert(Line.loc("push_artist_added_title", artistName), body);   // %@ = 아티스트명
-    }
-
     /// 내 픽에 반응이 마일스톤에 닿았음을 알린다(§10.5). 발송 여부 판정은 `PickService`가 한다.
     ///
     /// ⚠️ 문구를 서버에서 만들지 않는 이유 — `LocaleContextHolder`는 **반응을 누른 사람**의

@@ -42,29 +42,6 @@ class PushServiceTest {
     }
 
     @Test
-    @DisplayName("아티스트 추가 푸시 — 문구를 안 주면 본문은 loc-key로 나간다")
-    void artistAddedUsesLocKeyByDefault() {
-        for (String note : new String[]{null, "", "  "}) {
-            PushService.Alert alert = PushService.artistAddedAlert("Radiohead", note);
-
-            assertThat(alert.title().key()).isEqualTo("push_artist_added_title");
-            assertThat(alert.title().arg()).isEqualTo("Radiohead");
-            assertThat(alert.body().key()).isEqualTo("push_artist_added_body");
-            assertThat(alert.body().text()).isNull();
-        }
-    }
-
-    @Test
-    @DisplayName("아티스트 추가 푸시 — 문구를 주면 본문만 그 문구로 바뀐다")
-    void artistAddedUsesNoteAsBody() {
-        PushService.Alert alert = PushService.artistAddedAlert("Radiohead", "일부 앨범만 올라왔어요");
-
-        assertThat(alert.body().text()).isEqualTo("일부 앨범만 올라왔어요");
-        assertThat(alert.body().key()).isNull();
-        assertThat(alert.title().key()).isEqualTo("push_artist_added_title");   // 제목은 그대로 기기 언어
-    }
-
-    @Test
     @DisplayName("반응 푸시 — 첫 반응은 닉네임을 본문에 담는다 (title은 한 줄이라 잘린다)")
     void pickReactionFirstNamesTheReactor() {
         PushService.Alert alert = PushService.pickReactionAlert("digger_kim", 1);

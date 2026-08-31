@@ -295,8 +295,9 @@ function loadRequests() {
   run(async () => {
     requests = await api('GET', '/internal/admin/artist-requests');
     $('#requests').innerHTML = requests.length ? requests.map((r, i) => `<div class="item">
-      <div class="t"><b>${esc(r.artistName)}</b><span>#${r.id} · ${esc(r.nickname)} · ${new Date(r.createdAt).toLocaleDateString()} · 피드 ${r.trackCount}곡</span></div>
+      <div class="t"><b>${esc(r.artistName)}</b><span>#${r.id} · ${esc(r.nickname)}(uid ${r.userId}) · ${new Date(r.createdAt).toLocaleDateString()} · 피드 ${r.trackCount}곡</span></div>
       <button onclick="prefillArtist(${i})">수집</button>
+      <button onclick="prefillPush(${r.userId})">푸시</button>
       <button onclick="resolve(${r.id}, 'ADDED')">추가완료</button>
       <button onclick="resolve(${r.id}, 'CANCELED')">거절</button>
     </div>`).join('') : '<p class="muted">대기중인 요청 없음</p>';
@@ -371,15 +372,26 @@ async function collect(artistId, btn) {
 }
 
 function resolve(id, status) {
-  // 거절 사유는 요청한 유저 화면에 그대로 보인다. 추가완료 사유는 푸시 본문으로 나간다(비우면 앱 기본 문구).
-  const reason = prompt(status === 'CANCELED' ? '거절 사유 (유저 화면에 그대로 보인다)' : '푸시 본문 (비우면 앱 기본 문구)',
-                        status === 'CANCELED' ? 'Not available on Apple Music' : '');
-  if (reason === null) return;
+  // 추가완료는 푸시를 안 보낸다 — 한 유저가 수십 건을 넣으면 알림이 그만큼 울린다.
+  // 다 처리한 뒤 [푸시]로 그 유저에게 한 번만 보낸다. 거절 사유만 유저 화면에 그대로 보인다.
+  let reason = null;
+  if (status === 'CANCELED') {
+    reason = prompt('거절 사유 (유저 화면에 그대로 보인다)', 'Not available on Apple Music');
+    if (reason === null) return;
+  }
   run(async () => {
     await api('POST', `/internal/artist-requests/${id}/resolve`, reason ? { status, cancelReason: reason } : { status });
-    toast(status === 'ADDED' ? '추가완료 — 요청자에게 푸시 발송' : '거절 처리 완료');
+    toast(status === 'ADDED' ? '추가완료 — 푸시는 안 나간다([푸시]로 직접 발송)' : '거절 처리 완료');
     loadRequests();
   });
+}
+
+// 요청 목록에서 바로 그 유저에게 쏘러 간다. 문구는 사람이 쓴다 — 번역이 없어서
+// 유저 언어를 보고 써야 하고, 몇 건을 묶어 보내는지도 그때그때 다르다.
+function prefillPush(userId) {
+  $('#pTo').value = userId;
+  $('[data-tab="push"]').click();
+  $('#pTitle').focus();
 }
 
 /* ---------- 푸시 ---------- */
