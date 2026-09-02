@@ -72,7 +72,8 @@ public class PickService {
         return new PickListResponse(items, hasMore ? new PickCursor(last.getIsOfficial(), last.getId()).encode() : null, hasMore);
     }
 
-    @Transactional(readOnly = true)
+    /// 상세 조회가 곧 재생 진입이라 여기서 재생 수를 센다(`TODO.md` P1). 읽기 전용이 아니게 된 이유가 그것뿐이다.
+    @Transactional
     public FeedResponse getPickDetail(Long userId, Long pickId) {
         Pick pick = pickRepository.findById(pickId).orElseThrow(() -> new BusinessException(ErrorCode.PICK_DOES_NOT_EXIST));
         if (pick.getIsDeleted()) {
@@ -83,6 +84,9 @@ public class PickService {
         if (pickTracks.isEmpty()) {
             throw new BusinessException(ErrorCode.PICK_DOES_NOT_EXIST);
         }
+
+        // 곡이 없거나 지워진 픽에서 걸러진 뒤에 센다 — 404로 끝난 요청은 재생이 아니다.
+        pick.play();
 
         List<Long> trackIdsInPick = pickTracks.stream().map(pt -> pt.getTrack().getId()).toList();
         Set<Long> hypedTrackIdsInPick = userId == null ? Set.of() : userHypeTrackRepository.findHypedTrackIds(userId, trackIdsInPick);

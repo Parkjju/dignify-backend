@@ -140,6 +140,21 @@ public class PickServiceTest {
     }
 
     @Test
+    @DisplayName("상세를 열면 재생 수가 오르고 목록에 실려 나온다 - 목록 조회로는 안 오른다")
+    void detailCountsPlayButListDoesNot() {
+        pickService.createPick(owner.getId(), new PickCreate("셀 픽", trackIds(0)));
+        Long pickId = lastPick().getId();
+
+        pickService.getPickDetail(other.getId(), pickId);
+        pickService.getPickDetail(other.getId(), pickId);
+        // 목록은 스크롤이라 세면 안 된다. 여기서 오르면 카드가 지나가기만 해도 재생이 된다.
+        pickService.getPicks(other.getId(), null, false);
+
+        assertThat(pickService.getPicks(other.getId(), null, false).items())
+                .extracting(PickResponse::playCount).containsExactly(2);
+    }
+
+    @Test
     @DisplayName("남의 픽 · 이미 삭제된 픽 · 없는 id는 전부 같은 404 - 존재를 숨긴다")
     void deleteHidesEverythingBehindOne404() {
         pickService.createPick(owner.getId(), new PickCreate(null, trackIds(0)));
