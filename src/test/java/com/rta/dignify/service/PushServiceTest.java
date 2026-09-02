@@ -75,15 +75,19 @@ class PushServiceTest {
         assertThat(payload).contains("push_pick_reaction_first_title");
         assertThat(payload).contains("push_pick_reaction_first", "digger_kim");
         assertThat(payload).doesNotContain("push_pick_reaction_milestone");
+        // 이 키가 빠지면 앱이 type을 unknown으로 접어 계측이 통째로 뭉친다.
+        assertThat(payload).contains("\"type\":\"pick_reaction\"");
     }
 
     @Test
     @DisplayName("APNs 페이로드 — 공지 푸시는 원문이 그대로 나간다")
     void apnsPayloadCarriesRawText() {
         String payload = PushService.apnsPayload(
-                new PushService.Alert(PushService.Line.raw("제목"), PushService.Line.raw("본문")));
+                new PushService.Alert(PushService.Line.raw("제목"), PushService.Line.raw("본문"), "curation"));
 
         assertThat(payload).contains("제목", "본문");
+        // 앱(AppDelegate)이 이 값을 보고 큐레이션 세트를 앞으로 끌어온다.
+        assertThat(payload).contains("\"type\":\"curation\"");
     }
 
     @Test

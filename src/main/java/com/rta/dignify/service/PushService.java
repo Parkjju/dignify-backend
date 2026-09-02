@@ -62,8 +62,12 @@ public class PushService {
         String[] args() { return arg == null ? new String[0] : new String[]{arg}; }
     }
 
-    /// 알림 한 건 = 제목 + 본문. 무엇을 말할지는 여기까지고, 어떻게 보낼지는 렌더러가 맡는다.
-    record Alert(Line title, Line body) { }
+    /// 알림 한 건 = 제목 + 본문 + 종류. 무엇을 말할지는 여기까지고, 어떻게 보낼지는 렌더러가 맡는다.
+    ///
+    /// `type`은 앱이 **누른 뒤 어디로 갈지**를 정하는 키다(APNs·FCM 둘 다 커스텀 키로 실린다).
+    /// 앱은 못 알아보는 값이면 그냥 앱을 열기만 하므로, 새 종류를 늘려도 구버전이 깨지지 않는다.
+    /// 계측(`push_opened{type}`)도 같은 값을 쓴다 — 안 실으면 전량 `unknown`으로 뭉친다.
+    record Alert(Line title, Line body, String type) { }
 
     /// 내 픽에 반응이 마일스톤에 닿았음을 알린다(§10.5). 발송 여부 판정은 `PickService`가 한다.
     ///
@@ -87,13 +91,14 @@ public class PushService {
     /// 닉네임이 긴 유저(최대 20자)의 이름이 들어가면 잘린다. body는 배너에서 두 줄이고
     /// 펼치면 전부 보인다. 그래서 title은 인자 없는 고정 문구다.
     ///
-    /// 본문에 "보러 가기" 같은 유도 문구는 안 넣는다 — 딥링크가 없어 탭해도 그 픽으로 못 간다.
+    /// 본문에 "보러 가기" 같은 유도 문구는 안 넣는다 — 앱에 아직 이 type을 받는 분기가 없어
+    /// 탭해도 그 픽으로 못 간다. iOS가 분기를 넣으면 그때 문구도 같이 바꾼다.
     static Alert pickReactionAlert(String reactorNickname, long count) {
         return count == 1
                 ? new Alert(Line.loc("push_pick_reaction_first_title"),
-                            Line.loc("push_pick_reaction_first", reactorNickname))
+                            Line.loc("push_pick_reaction_first", reactorNickname), "pick_reaction")
                 : new Alert(Line.loc("push_pick_reaction_milestone_title"),
-                            Line.loc("push_pick_reaction_milestone", String.valueOf(count)));
+                            Line.loc("push_pick_reaction_milestone", String.valueOf(count)), "pick_reaction");
     }
 
     /// 운영자가 손으로 쏘는 공지 푸시(run-cron.sh push). 발송 대수를 돌려준다.
@@ -110,8 +115,12 @@ public class PushService {
     /// minBuild를 주면 그 빌드 이상인 기기에만 나간다. 신기능 안내를 구버전 유저가 받으면
     /// 눌러도 그 화면이 없어서다. 빌드를 아직 모르는 기기(app_build null)는 구버전으로 치고 뺀다 —
     /// 앱을 한 번 켜야 채워지는 값이라, 확실할 때만 보내는 쪽이 맞다.
-    public int broadcast(String title, String body, boolean force, Long userId, Integer minBuild) {
-        Alert alert = new Alert(Line.raw(title), Line.raw(body));
+    /// type은 앱의 딥링크 분기와 `push_opened` 축을 정한다. `curation`을 넣어야 큐레이션 세트가
+    /// 앞으로 나온다 — 안 넣으면 눌러도 일반 피드 첫 화면이라, 알림에서 본 곡을 못 찾는다.
+    /// 비워 보내면 `notice`(그냥 앱 열기)로 친다.
+    public int broadcast(String title, String body, String type, boolean force, Long userId, Integer minBuild) {
+        Alert alert = new Alert(Line.raw(title), Line.raw(body),
+                type == null || type.isBlank() ? "notice" : type);
 
         List<UserDeviceToken> targets = userId == null
                 ? tokenRepository.findAll()
@@ -182,7 +191,8 @@ public class PushService {
 
     static String apnsPayload(Alert alert) {
         ApnsPayloadBuilder builder = new SimpleApnsPayloadBuilder()
-                .setSound(SimpleApnsPayloadBuilder.DEFAULT_SOUND_FILENAME);
+                .setSound(SimpleApnsPayloadBuilder.DEFAULT_SOUND_FILENAME)
+                .addCustomProperty("type", alert.type());
 
         if (alert.title().key() != null) {
             builder.setLocalizedAlertTitle(alert.title().key(), alert.title().args());
@@ -218,6 +228,7 @@ public class PushService {
 
         return Message.builder()
                 .setToken(token)
+                .putData("type", alert.type())
                 .setAndroidConfig(AndroidConfig.builder().setNotification(notification.build()).build())
                 .build();
     }

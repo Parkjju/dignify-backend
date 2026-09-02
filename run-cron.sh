@@ -169,6 +169,8 @@ if [ "$JOB" = "push" ]; then
     echo "제목: $TITLE"
     echo "본문: $BODY"
     [ -n "$MIN_BUILD" ] && echo "대상 빌드: $MIN_BUILD 이상 (그 아래와 빌드 미확인 기기는 빠집니다)"
+    # TYPE=curation을 주면 눌렀을 때 큐레이션 세트가 앞으로 온다. 안 주면 그냥 앱만 열린다.
+    [ -n "${TYPE:-}" ] && echo "종류: $TYPE (누르면 그 화면으로 갑니다)"
     if [ -n "$TO" ]; then
         echo "대상: userId=$TO (이 유저 기기에만, 시간대 무시)"
     else
@@ -181,9 +183,9 @@ if [ "$JOB" = "push" ]; then
 
     RESP=$(curl -s -w "\n%{http_code}" -X POST "$LIVE_URL/internal/push/broadcast" \
         -H "X-Cron-Secret: $ADMIN_SECRET" -H "Content-Type: application/json" \
-        -d "$(jq -nc --arg t "$TITLE" --arg b "$BODY" --argjson f "$FORCE" \
+        -d "$(jq -nc --arg t "$TITLE" --arg b "$BODY" --arg ty "${TYPE:-}" --argjson f "$FORCE" \
                 --argjson u "${TO:-null}" --argjson mb "${MIN_BUILD:-null}" \
-                '{title:$t,body:$b,force:$f,userId:$u,minBuild:$mb}')")
+                '{title:$t,body:$b,type:$ty,force:$f,userId:$u,minBuild:$mb}')")
     CODE=$(echo "$RESP" | tail -1)
     SENT=$(echo "$RESP" | sed '$d')
     if [ "$CODE" != "200" ]; then

@@ -21,6 +21,6 @@ public class PushInternalController {
     @PostMapping("/internal/push/broadcast")
     public ResponseEntity<Integer> broadcast(@RequestHeader("X-Cron-Secret") String secret, @Valid @RequestBody PushBroadcast body) {
         internalSecrets.verifyAdmin(secret);
-        return ResponseEntity.ok(pushService.broadcast(body.title(), body.body(), body.force(), body.userId(), body.minBuild()));
+        return ResponseEntity.ok(pushService.broadcast(body.title(), body.body(), body.type(), body.force(), body.userId(), body.minBuild()));
     }
 }

@@ -119,10 +119,15 @@
         <div class="row">
           <input id="pTo" placeholder="TO: userId (비우면 전체)">
           <input id="pBuild" placeholder="MIN_BUILD (예: 12)">
+          <select id="pType">
+            <option value="">TYPE: 공지 (그냥 앱 열기)</option>
+            <option value="curation">TYPE: 큐레이션 (세트를 앞에 띄운다)</option>
+          </select>
         </div>
         <div class="row"><label><input type="checkbox" id="pForce" style="width:auto"> 로컬 새벽인 유저에게도 발송 (FORCE)</label></div>
         <div class="bar"><button class="primary danger" onclick="sendPush()">발송</button></div>
-        <p class="muted">보낸 그대로 알림에 뜬다(번역 없음). 기본은 기기 로컬 09~22시인 유저에게만.</p>
+        <p class="muted">보낸 그대로 알림에 뜬다(번역 없음). 기본은 기기 로컬 09~22시인 유저에게만.<br>
+          큐레이션 세트를 알리는 푸시는 TYPE을 <b>큐레이션</b>으로 — 공지로 보내면 눌러도 세트가 아니라 일반 피드가 열린다.</p>
       </div>
       <div class="col">
         <h2>등록된 기기</h2>
@@ -425,7 +430,7 @@ function sendPush() {
   if (!to && !confirm(`전체 유저에게 발송한다. 회수 안 된다.\n\n${title}\n${body}`)) return;
   run(async () => {
     const sent = await api('POST', '/internal/push/broadcast', {
-      title, body, force: $('#pForce').checked,
+      title, body, type: $('#pType').value, force: $('#pForce').checked,
       userId: to ? Number(to) : null,
       minBuild: minBuild ? Number(minBuild) : null
     });
