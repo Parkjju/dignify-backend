@@ -4,7 +4,9 @@ import com.rta.dignify.domain.OnboardingCandidate;
 import com.rta.dignify.dto.feed.FeedItem;
 import com.rta.dignify.dto.onboarding.OnboardingCandidatesResponse;
 import com.rta.dignify.dto.onboarding.OnboardingCandidatesResponse.Round;
+import com.rta.dignify.dto.onboarding.OnboardingSeedPoolResponse;
 import com.rta.dignify.repository.OnboardingCandidateRepository;
+import com.rta.dignify.repository.OnboardingSeedPoolRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +33,7 @@ public class OnboardingService {
     static final String LOW = "LOW";
 
     private final OnboardingCandidateRepository onboardingCandidateRepository;
+    private final OnboardingSeedPoolRepository onboardingSeedPoolRepository;
 
     /// 캐시하지 않는다. 극단마다 여러 곡을 두고 매번 랜덤으로 뽑는 게 이 기능의 전부라
     /// (고정 6곡이면 조합이 8개뿐이라 초기 유저 피드가 전부 비슷해진다) 요청마다 새로 뽑아야 한다.
@@ -44,6 +47,17 @@ public class OnboardingService {
                         pair.stream().map(c -> FeedItem.from(c.getTrack(), false)).toList()))
                 .toList();
         return new OnboardingCandidatesResponse(rounds);
+    }
+
+    /// 온보딩 곡 고르기 화면의 후보 목록. 심어 둔 순서 그대로 내보낸다.
+    ///
+    /// 캐시하지 않는다. 수십 행짜리 정적 조회라 캐시가 버는 게 없고, 곡을 갈아 끼운 뒤
+    /// "언제 반영되나"를 따지게 만드는 값이 더 비싸다.
+    @Transactional(readOnly = true)
+    public OnboardingSeedPoolResponse getSeedPool() {
+        return new OnboardingSeedPoolResponse(onboardingSeedPoolRepository.findAllActiveOrdered().stream()
+                .map(s -> FeedItem.from(s.getTrack(), false))
+                .toList());
     }
 
     /// 쌍에서 HIGH 쪽 트랙 id. `pickPairs`가 두 극단을 하나씩 넣으므로 항상 하나 있다.
