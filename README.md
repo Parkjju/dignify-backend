@@ -58,6 +58,8 @@ The feed used to be a two-phase genre filter — preferred genres first, general
 **Cursor.** `(phase, genreOffset, generalOffset, seed)` Base64-encoded as an opaque string; the client never parses it. The offset advances by a full page even when the page came back short, so a narrow window can't make consecutive requests circle the same spot.
 
 ### 4. Asynchronous Cron Job with `@Async`
+> **Retired 2026-08-10.** The brute-force ID scan below loaded tracks faster than users could get through them, and too many were noise. The code is still here, but the catalog now grows only through artist requests: an admin resolves the requested name to an iTunes `artistId` (stopping on same-name artists so a human picks the right one) and collects that artist's catalog from the admin page on Cloud Run. See *Data Ingestion* below.
+
 Implemented a long-running iTunes track collection job that runs without blocking the HTTP thread:
 
 - Controller returns `202 Accepted` immediately; the actual loop runs in Spring's async thread pool
@@ -66,7 +68,7 @@ Implemented a long-running iTunes track collection job that runs without blockin
 - Per-track transactions with `REQUIRES_NEW` propagation — a duplicate key violation on one track rolls back only that track, not the entire batch
 
 ### 5. Cloud SQL Auth Proxy for Local Data Ingestion
-iTunes API blocks GCP datacenter IPs (Broken Pipe on Cloud Run). Solved by running the cron job locally and writing directly to Cloud SQL via a secure tunnel:
+The brute-force scan (§4) got Broken Pipe from the iTunes API on Cloud Run, so it ran locally and wrote directly to Cloud SQL via a secure tunnel. Per-artist lookups do work from Cloud Run, which is why artist collection moved to the admin page:
 
 - Cloud SQL Auth Proxy creates a local TCP tunnel authenticated via Application Default Credentials
 - Spring Boot connects to `localhost:5433`; the proxy forwards to Cloud SQL over an encrypted channel — no public IP exposure
@@ -83,7 +85,7 @@ PostgreSQL does not auto-create indexes on foreign key columns (unlike MySQL). E
 
 | Index | Table | Column | Use Case |
 |---|---|---|---|
-| `idx_track_genre_id` | `tracks` | `genre_id` | Feed genre filter |
+| `idx_track_genre_id` | `tracks` | `genre_id` | Per-genre stats (digging profile, admin) — the feed stopped filtering by genre on 2026-08-24 |
 | `idx_listened_track_user_id` | `listened_tracks` | `user_id` | Listening history lookup |
 | `idx_listened_track_track_id` | `listened_tracks` | `track_id` | Cascade / analytics |
 | `idx_user_auth_user_id` | `user_auth` | `user_id` | Auth provider lookup per login |
@@ -161,7 +163,8 @@ Wrote tests at multiple layers with a clear separation of concerns between unit,
 | GET | `/feed` | Paginated track feed, mood-ordered, opaque cursor (guests allowed) |
 | GET | `/feed/curation` | This week's curated set — same for everyone, no paging |
 | GET | `/feed/search` | Keyword search across track/artist name (accent- and quote-folded) |
-| GET | `/onboarding/candidates` | Two-choice sound rounds, one pair per mood axis |
+| GET | `/onboarding/seed-pool` | Fixed list of tracks the onboarding screen lets a new user pick from |
+| GET | `/onboarding/candidates` | Two-choice sound rounds — kept for app builds before iOS 1.1.1 |
 | GET | `/tracks/{trackId}` | Track detail + first 5 users who hyped it |
 | POST | `/tracks/{trackId}/hype` | Hype a track |
 | DELETE | `/tracks/{trackId}/hype` | Remove hype |
@@ -177,7 +180,7 @@ Wrote tests at multiple layers with a clear separation of concerns between unit,
 | POST | `/users/me/device-token` | Register a push token (APNs or FCM, by platform) |
 | GET | `/picks` | Shared track collections, keyset cursor (`mine=true` for my own) |
 | POST | `/picks` | Create a pick from 1–30 tracks |
-| GET | `/picks/{pickId}` | Tracks in a pick, in feed response shape |
+| GET | `/picks/{pickId}` | Tracks in a pick, in feed response shape; counts a play |
 | DELETE | `/picks/{pickId}` | Delete my pick |
 | PUT/DELETE | `/picks/{pickId}/reaction` | Set or clear my emoji reaction (5 allowed) |
 | PUT | `/picks/{pickId}/title` | Rename my pick (profanity-filtered) |
@@ -201,7 +204,7 @@ Internal routes are guarded by an `X-Cron-Secret` header instead of a JWT: `/int
 │  ┌──────────────────────┐     ┌───────────────────────────┐    │
 │  │  Artifact Registry   │     │       Cloud Run           │    │
 │  │  (Docker Image)      │────▶│   Spring Boot 3.5 / Java  │    │
-│  └──────────────────────┘     │   1Gi · min 1 / max 4     │    │
+│  └──────────────────────┘     │   1Gi · min 1 / max 20    │    │
 │                               └────────────┬──────────────┘    │
 │                                            │ Java connector     │
 │                                            │ mTLS, no public IP │
@@ -222,9 +225,11 @@ Internal routes are guarded by an `X-Cron-Secret` header instead of a JWT: `/int
 
 > **Why `min-instances 1` rather than scale-to-zero?** A cold start takes ~22 seconds — JVM boot plus the first Cloud SQL connection — and at this traffic level almost every request would pay it. Memory is 1Gi because 512Mi was OOM-killed roughly once a day; the app's baseline footprint is flat at about half of 1Gi regardless of traffic.
 
-### Data Ingestion Pipeline (Local → Cloud SQL)
+### Data Ingestion Pipeline
 
-iTunes API blocks GCP datacenter IPs. The collection job runs locally and writes directly to Cloud SQL via an encrypted proxy tunnel.
+**Today (since 2026-08-10):** tracks are added per artist from the admin page (`/internal/admin.html` → artist requests → collect). It calls the live Cloud Run service, so no local process is needed. Korean-name enrichment and the `artist_id` backfill also run there, one 190-track batch per request, because Cloud Run throttles CPU outside a request and a long `@Async` loop would stall.
+
+**Retired — brute-force scan (Local → Cloud SQL).** Kept for reference. The job ran locally and wrote directly to Cloud SQL via an encrypted proxy tunnel.
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -318,13 +323,11 @@ Tests run against real Postgres, not H2 — the feed SQL is PostgreSQL-specific 
 
 ### Data ingestion (with Cloud SQL)
 
-```bash
-# Terminal 1 — open tunnel to Cloud SQL
-cloud-sql-proxy PROJECT:REGION:INSTANCE --port=5433
+Day-to-day ingestion happens in the admin page; nothing needs to run locally. `run-cron.sh` is still around for the retired brute-force scan and as a terminal fallback for the admin actions (`./run-cron.sh -h` lists them):
 
-# Terminal 2 — start app
-./run-cron.sh <endIndex>
-# e.g. ./run-cron.sh 50000000
+```bash
+./run-cron.sh collect <endIndex>        # retired brute-force scan, e.g. 50000000
+./run-cron.sh collect-artist "Radiohead"
 ```
 
-`run-cron.sh` handles: ADC tunnel verification → Spring Boot startup → cron job trigger → log streaming. Uses `caffeinate` to prevent macOS sleep during long-running ingestion jobs.
+It starts its own `cloud-sql-proxy` on port 5433, runs `bootRun` against it, triggers the job and streams logs, with `caffeinate` to keep macOS awake. Note it opens a second connection pool against the same Cloud SQL instance as production.
