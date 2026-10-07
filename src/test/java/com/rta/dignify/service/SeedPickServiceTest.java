@@ -95,6 +95,19 @@ public class SeedPickServiceTest {
     }
 
     @Test
+    @DisplayName("계정만 만들기 - 실유저 기본 닉네임 형식, 가입일은 흩어지고, 100번째도 번호가 안 잘린다")
+    void createAccounts() {
+        userRepository.save(User.create("seed99@dignify.local", "old_seed99"));
+
+        assertThat(seedPickService.createAccounts(20)).isEqualTo(20);
+        assertThat(jdbcTemplate.queryForList("SELECT nickname FROM users WHERE email LIKE 'seed1__@dignify.local'", String.class))
+                .hasSize(20).allMatch(n -> n.matches("digger_[0-9a-f]{8}"));
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM users WHERE email = 'seed100@dignify.local'", Integer.class)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(DISTINCT created_at::date) FROM users WHERE email LIKE 'seed1__@dignify.local'", Integer.class))
+                .isGreaterThan(5);
+    }
+
+    @Test
     @DisplayName("같은 곡 두 번 / 중복 닉네임은 아무것도 안 넣고 막힌다")
     void rejectsBadInput() {
         userRepository.save(User.create("seed01@dignify.local", "old_seed1"));

@@ -61,10 +61,10 @@ public class SeedPickService {
         String ids = trackIds.stream().map(String::valueOf).collect(Collectors.joining(","));
 
         // 이메일은 seedNN 최대값 + 1로 채번한다. 손으로 세면 언젠가 겹친다.
+        // 'FM99900'은 두 자리를 보장하고 다섯 자리까지 늘어난다. lpad(.., 2)는 100부터 잘라 seed10과 겹친다.
         Long userId = jdbcTemplate.queryForObject("""
                 INSERT INTO users (email, nickname, is_onboarding_complete, created_at, updated_at)
-                SELECT 'seed' || lpad((COALESCE(max(substring(email from 'seed(\\d+)@')::int), 0) + 1)::text, 2, '0')
-                           || '@dignify.local',
+                SELECT 'seed' || to_char(COALESCE(max(substring(email from 'seed(\\d+)@')::int), 0) + 1, 'FM99900') || '@dignify.local',
                        ?, TRUE, NOW() - make_interval(days => ?), NOW()
                 FROM users WHERE email LIKE 'seed%@dignify.local'
                 RETURNING user_id
@@ -141,6 +141,30 @@ public class SeedPickService {
                 WHERE pt.pick_id = ?
                 ON CONFLICT (user_id, track_id) DO NOTHING
                 """, SEED_EMAIL, per, pickId);
+    }
+
+    /// 픽 없이 운영 계정만 count개 만든다. 반환값은 실제로 만든 수.
+    ///
+    /// 닉네임은 실유저가 닉네임을 안 바꿨을 때와 같은 형식(`digger_` + 16진 8자, AuthService)이라 섞이면 구분이 안 된다.
+    /// 가입일은 PostHog 첫 이벤트(2026-07-17)부터 지금 사이로 흩는다 — 한날 가입이 몰리면 그것도 티가 난다.
+    /// 닉네임이 우연히 겹치면 그 줄만 건너뛴다(ON CONFLICT).
+    @Transactional
+    public int createAccounts(int count) {
+        if (count < 1 || count > 200) {
+            throw new BusinessException(ErrorCode.METHOD_ARGUMENT_NOT_VALID, "count는 1~200");
+        }
+        return jdbcTemplate.update("""
+                INSERT INTO users (email, nickname, is_onboarding_complete, created_at, updated_at)
+                SELECT 'seed' || to_char(b.base + g, 'FM99900') || '@dignify.local',
+                       'digger_' || substr(md5(random()::text), 1, 8),
+                       TRUE, x.at, x.at
+                FROM generate_series(1, ?) g
+                CROSS JOIN (SELECT COALESCE(max(substring(email from 'seed(\\d+)@')::int), 0) AS base
+                            FROM users WHERE email LIKE 'seed%@dignify.local') b
+                CROSS JOIN LATERAL (SELECT TIMESTAMPTZ '2026-07-17' + random() * (NOW() - TIMESTAMPTZ '2026-07-17') AS at
+                                    WHERE g IS NOT NULL) x   -- g를 걸어야 줄마다 random()이 다시 돈다
+                ON CONFLICT DO NOTHING
+                """, count);
     }
 
     /// 현황 한 판(`ops/picks-seed-status.sql`). 실유저 픽까지 최신 40개.

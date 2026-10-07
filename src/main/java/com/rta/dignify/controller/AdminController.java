@@ -118,4 +118,11 @@ public class AdminController {
         internalSecrets.verifyAdmin(secret);
         return seedPickService.hype(pickId, per);
     }
+
+    /// 픽 없이 운영 계정만 만든다. 실제로 만든 수를 돌려준다.
+    @PostMapping("/seed-accounts")
+    public int createSeedAccounts(@RequestHeader("X-Cron-Secret") String secret, @RequestParam int count) {
+        internalSecrets.verifyAdmin(secret);
+        return seedPickService.createAccounts(count);
+    }
 }

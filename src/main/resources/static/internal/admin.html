@@ -162,6 +162,9 @@
           🔥는 기존 운영 계정 수까지만 붙는다(소유자는 자기 픽에 못 누른다).</p>
       </div>
     </div>
+    <h2 style="margin-top:18px">운영 계정 늘리기</h2>
+    <div class="row" style="max-width:420px"><input id="sAcc" type="number" min="1" max="200" value="100"><button onclick="seedAccounts()">개 만들기</button></div>
+    <p class="muted">픽 없이 계정만 만든다. 닉네임은 실유저 기본 닉네임과 같은 digger_xxxxxxxx, 가입일은 2026-07-17 ~ 오늘 사이 무작위. 🔥·하입할 때 여기서 무작위로 뽑힌다.</p>
     <h2 style="margin-top:18px">최신 픽 (실유저 포함)</h2>
     <div class="row" style="max-width:420px"><label style="white-space:nowrap">하입: 곡마다 운영 계정</label><input id="sPer" type="number" min="1" value="1"><span>명</span></div>
     <div id="seedStatus"></div>
@@ -540,6 +543,13 @@ function seedReact(pickId, kind) {
     toast(n ? `pick ${pickId}에 🔥 +1` : '더 누를 운영 계정이 없다');
     loadSeed();
   });
+}
+
+function seedAccounts() {
+  const n = Number($('#sAcc').value) || 0;
+  if (n < 1 || n > 200) return toast('1~200개');
+  if (!confirm(`운영 계정 ${n}개를 만든다.`)) return;
+  run(async () => { toast(`${await api('POST', '/internal/admin/seed-accounts?count=' + n)}개 만들었다`); loadSeed(); });
 }
 
 function seedHype(pickId) {
