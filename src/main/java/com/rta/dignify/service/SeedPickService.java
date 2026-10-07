@@ -143,6 +143,23 @@ public class SeedPickService {
                 """, SEED_EMAIL, per, pickId);
     }
 
+    /// 픽 표시 재생 수에 n을 더한다. 실제 재생(play_count)은 안 건드린다. 반환값은 더한 뒤 앱에 보이는 값.
+    @Transactional
+    public int addPlays(Long pickId, int n) {
+        if (n < 1 || n > 1000) {
+            throw new BusinessException(ErrorCode.METHOD_ARGUMENT_NOT_VALID, "n은 1~1000");
+        }
+        List<Integer> shown = jdbcTemplate.queryForList("""
+                UPDATE picks SET seed_play_count = seed_play_count + ?
+                WHERE pick_id = ? AND is_deleted = FALSE
+                RETURNING play_count + seed_play_count
+                """, Integer.class, n, pickId);
+        if (shown.isEmpty()) {
+            throw new BusinessException(ErrorCode.PICK_DOES_NOT_EXIST);
+        }
+        return shown.getFirst();
+    }
+
     /// 픽 없이 운영 계정만 count개 만든다. 반환값은 실제로 만든 수.
     ///
     /// 닉네임은 실유저가 닉네임을 안 바꿨을 때와 같은 형식(`digger_` + 16진 8자, AuthService)이라 섞이면 구분이 안 된다.
@@ -175,7 +192,7 @@ public class SeedPickService {
         List<Map<String, Object>> picks = jdbcTemplate.queryForList("""
                 SELECT p.pick_id AS "pickId", o.nickname AS owner, p.title, p.created_at::date::text AS created,
                        CASE WHEN o.email LIKE ? THEN 'seed' ELSE 'user' END AS kind,
-                       p.play_count AS plays,
+                       p.play_count AS plays, p.seed_play_count AS "seedPlays",
                        (SELECT count(*) FROM pick_tracks t WHERE t.pick_id = p.pick_id)    AS tracks,
                        (SELECT count(*) FROM pick_reactions r WHERE r.pick_id = p.pick_id) AS reactions,
                        (SELECT count(*) FROM users u

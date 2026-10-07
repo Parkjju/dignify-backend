@@ -169,6 +169,7 @@
     <div class="row" style="max-width:420px"><label style="white-space:nowrap">하입: 곡마다 운영 계정</label><input id="sPer" type="number" min="1" value="1"><span>명</span></div>
     <div id="seedStatus"></div>
     <p class="muted">🔥는 앱과 같은 경로로 들어간다 — <b>실유저 픽이면 1·5·10번째 🔥에서 주인에게 푸시가 바로 나간다</b>(시간대 필터 없음, 한국 새벽이면 피할 것).<br>
+      재생 +는 앱에 보이는 숫자만 올린다. 판독용 실제 재생(play_count)은 그대로라 "(실제 N)"으로 따로 보인다. 앱은 5 미만이면 숨긴다.<br>
       하입은 곡의 전역 인기 점수라 많이 붙이면 그 곡이 신규 유저 첫 피드를 점령한다. 곡당 1~2명까지만.<br>
       seed 비중이 과하면 실유저 픽이 첫 페이지에서 밀려난다.</p>
   </section>
@@ -514,9 +515,10 @@ function loadSeed() {
     $('#seedStatus').innerHTML = `<p class="muted">운영 계정 ${accounts}개 · 지면 구성 ${mix.map(m => `${m.kind} ${m.picks}픽/${m.accounts}계정`).join(' · ')}</p>
       <table><tr><th>pick</th><th>구분</th><th>계정</th><th>제목</th><th>올린 날</th><th>곡</th><th>재생</th><th>🔥</th><th>운영 하입</th><th></th></tr>
       ${picks.map(p => `<tr><td>${p.pickId}</td><td>${p.kind === 'user' ? '<b>user</b>' : 'seed'}</td><td>${esc(p.owner)}</td><td>${esc(p.title) || '<span class="muted">(폴백)</span>'}</td>
-        <td>${p.created}</td><td>${p.tracks}</td><td>${p.plays}</td><td>${p.reactions}</td><td>${p.seedHypes}</td>
+        <td>${p.created}</td><td>${p.tracks}</td><td>${p.plays + p.seedPlays}${p.seedPlays ? ` <span class="muted">(실제 ${p.plays})</span>` : ''}</td><td>${p.reactions}</td><td>${p.seedHypes}</td>
         <td style="white-space:nowrap">${p.available ? `<button onclick="seedReact(${p.pickId}, '${p.kind}')">🔥 +1</button>` : '<span class="muted">🔥 소진</span>'}
-          <button onclick="seedHype(${p.pickId})">하입</button></td></tr>`).join('')}</table>`;
+          <button onclick="seedHype(${p.pickId})">하입</button>
+          <button onclick="seedPlays(${p.pickId})">재생 +</button></td></tr>`).join('')}</table>`;
   });
 }
 
@@ -543,6 +545,13 @@ function seedReact(pickId, kind) {
     toast(n ? `pick ${pickId}에 🔥 +1` : '더 누를 운영 계정이 없다');
     loadSeed();
   });
+}
+
+function seedPlays(pickId) {
+  const n = Number(prompt(`pick ${pickId} 재생 수에 몇을 더할까 (앱에 보이는 값만, 실제 재생은 그대로)`, '5'));
+  if (!n) return;
+  if (n < 1 || n > 1000 || !Number.isInteger(n)) return toast('1~1000 정수');
+  run(async () => { toast(`pick ${pickId} 재생 ${await api('POST', `/internal/admin/seed-picks/${pickId}/plays?n=${n}`)}로 보인다`); loadSeed(); });
 }
 
 function seedAccounts() {

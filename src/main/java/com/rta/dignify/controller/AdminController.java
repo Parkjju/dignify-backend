@@ -125,4 +125,11 @@ public class AdminController {
         internalSecrets.verifyAdmin(secret);
         return seedPickService.createAccounts(count);
     }
+
+    /// 앱에 보이는 재생 수에 n을 얹는다(실제 재생 play_count는 그대로). 얹은 뒤 보이는 값을 돌려준다.
+    @PostMapping("/seed-picks/{pickId}/plays")
+    public int addSeedPlays(@RequestHeader("X-Cron-Secret") String secret, @PathVariable Long pickId, @RequestParam int n) {
+        internalSecrets.verifyAdmin(secret);
+        return seedPickService.addPlays(pickId, n);
+    }
 }

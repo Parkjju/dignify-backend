@@ -47,6 +47,13 @@ public class Pick extends BaseTimeEntity {
     @Column(name = "play_count", nullable = false)
     private Integer playCount = 0;
 
+    /// 어드민이 얹은 재생 수. 앱에는 playCount와 **합쳐서** 보내고(PickResponse), 판독은 playCount만 본다 —
+    /// 한 칸에 섞으면 실제 재생과 구분이 안 된다(09-02 이전 추정 배분이 지금도 따로 빼고 보는 이유).
+    /// `@ColumnDefault`는 playCount와 같은 이유로 필수다.
+    @ColumnDefault("0")
+    @Column(name = "seed_play_count", nullable = false)
+    private Integer seedPlayCount = 0;
+
     private Pick(User user, String title, Boolean isOfficial) {
         this.user = user;
         this.title = title;

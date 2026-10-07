@@ -108,6 +108,18 @@ public class SeedPickServiceTest {
     }
 
     @Test
+    @DisplayName("재생 + - 앱에 보이는 값만 오르고 실제 재생 play_count는 그대로다")
+    void addPlaysKeepsRealCount() {
+        User real = userRepository.save(User.create("real@gmail.com", "real_user"));
+        Pick pick = pickRepository.save(Pick.create(real, null, false));
+        pick.play();
+        pickRepository.flush();
+
+        assertThat(seedPickService.addPlays(pick.getId(), 7)).isEqualTo(8);
+        assertThat(jdbcTemplate.queryForObject("SELECT play_count FROM picks WHERE pick_id = ?", Integer.class, pick.getId())).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("같은 곡 두 번 / 중복 닉네임은 아무것도 안 넣고 막힌다")
     void rejectsBadInput() {
         userRepository.save(User.create("seed01@dignify.local", "old_seed1"));
