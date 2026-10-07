@@ -120,6 +120,17 @@ public class SeedPickServiceTest {
     }
 
     @Test
+    @DisplayName("닉네임을 비우면 digger_xxxxxxxx로 만든다")
+    void blankNicknameFallsBackToRandom() {
+        Long id = tracks(1).get(0);
+
+        assertThat((String) seedPickService.create(new SeedPickCreate(null, null, List.of(id), 0)).get("nickname"))
+                .matches("digger_[0-9a-f]{8}");
+        assertThat((String) seedPickService.create(new SeedPickCreate("  ", null, List.of(id), 0)).get("nickname"))
+                .matches("digger_[0-9a-f]{8}");
+    }
+
+    @Test
     @DisplayName("같은 곡 두 번 / 중복 닉네임은 아무것도 안 넣고 막힌다")
     void rejectsBadInput() {
         userRepository.save(User.create("seed01@dignify.local", "old_seed1"));

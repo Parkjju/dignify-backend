@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /// 운영 계정으로 픽 지면을 채운다. `ops/picks-seed-daily.sql`·`picks-seed-react.sql`을 옮긴 것.
@@ -44,6 +45,12 @@ public class SeedPickService {
     @Transactional
     public Map<String, Object> create(SeedPickCreate request) {
         String nickname = request.nickname() == null ? "" : request.nickname().trim();
+        // 비우면 실유저 기본 닉네임과 같은 형식으로 만든다(AuthService). 8자 16진이라 겹칠 일은 사실상 없지만 겹치면 다시 뽑는다.
+        if (nickname.isEmpty()) {
+            do {
+                nickname = "digger_" + UUID.randomUUID().toString().substring(0, 8);
+            } while (userRepository.existsByNickname(nickname));
+        }
         if (!nickname.matches(NICKNAME_PATTERN) || ProfanityFilter.contains(nickname)) {
             throw new BusinessException(ErrorCode.USER_NICKNAME_INVALID);
         }
@@ -92,7 +99,7 @@ public class SeedPickService {
                 """, userId, joinedDaysAgo, ids);
 
         int reactions = react(pickId, request.reactions());
-        return Map.of("pickId", pickId, "userId", userId, "reactions", reactions);
+        return Map.of("pickId", pickId, "userId", userId, "nickname", nickname, "reactions", reactions);
     }
 
     /// 픽에 운영 계정 🔥를 want개까지 더 붙인다. 소유자·이미 누른 계정은 빠지고, 모자라면 있는 만큼만 들어간다.
