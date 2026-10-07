@@ -59,6 +59,7 @@
     <button data-tab="curation" class="on">큐레이션</button>
     <button data-tab="artist">아티스트 요청</button>
     <button data-tab="push">푸시</button>
+    <button data-tab="seed">픽 시딩</button>
     <button data-tab="stats">현황</button>
   </nav>
   <span class="sp"></span>
@@ -136,6 +137,37 @@
     </div>
   </section>
 
+  <!-- 픽 시딩 -->
+  <section id="seed">
+    <div class="cols">
+      <div class="col">
+        <h2>트랙 검색</h2>
+        <div class="row">
+          <input id="sq" placeholder="아티스트 또는 곡 이름" onkeydown="if(event.key==='Enter')search(false,'s')">
+          <button class="primary" onclick="search(false,'s')">검색</button>
+        </div>
+        <div class="list" id="sresults"></div>
+      </div>
+      <div class="col">
+        <h2>오늘 픽 (새 계정으로 올린다)</h2>
+        <div class="row"><input id="sNick" placeholder="닉네임 — 영문·숫자·_·한글 20자, 매일 새로"></div>
+        <div class="row"><input id="sTitle" placeholder="픽 제목 (비우면 앱이 폴백 제목을 만든다)"></div>
+        <div class="row"><label style="white-space:nowrap">🔥 반응</label><input id="sReact" type="number" min="0" value="2"></div>
+        <div class="list" id="seedSet"></div>
+        <div class="bar">
+          <button class="primary" onclick="postSeed()">게시</button>
+          <span class="muted" id="seedInfo"></span>
+        </div>
+        <p class="muted">계정 생성 → 게시 → 곡 하입(새 계정 한 명만) → 기존 운영 계정이 🔥. 한 번에 들어가고, 중간에 실패하면 아무것도 안 남는다.
+          🔥는 기존 운영 계정 수까지만 붙는다(소유자는 자기 픽에 못 누른다).</p>
+      </div>
+    </div>
+    <h2 style="margin-top:18px">운영 계정 픽</h2>
+    <div id="seedStatus"></div>
+    <p class="muted">🔥 더하기는 운영 계정 픽에만 된다. 실유저 픽에 넣으면 "첫 반응" 푸시가 영영 안 나가서 서버가 막는다 — 실유저 픽엔 앱에서 직접 누를 것.<br>
+      seed 비중이 과하면 실유저 픽이 첫 페이지에서 밀려난다.</p>
+  </section>
+
   <!-- 현황 -->
   <section id="stats">
     <div class="cols">
@@ -194,7 +226,8 @@ function setSecret() {
 function logout() {
   delete localStorage.cronSecret;
   setItems = [];
-  document.querySelectorAll('.list, #users').forEach(e => e.innerHTML = '');
+  seedItems = [];
+  document.querySelectorAll('.list, #users, #seedStatus').forEach(e => e.innerHTML = '');
   $('#setInfo').textContent = '';
   toast('시크릿을 지웠다. 다시 쓰려면 새로고침.');
 }
@@ -242,20 +275,22 @@ function trackRow(t, actions) {
 }
 
 // 앱과 같은 검색 API를 그대로 쓴다. 한 번에 10곡씩이라 카탈로그를 훑으려면 더보기가 필요하다.
-let nextCursor = null;
+// 큐레이션과 픽 시딩이 같이 쓴다 — p는 입력/결과 id 접두사('' 큐레이션, 's' 시딩).
+const nextCursor = {};
 
-function search(append) {
-  const q = $('#q').value.trim();
+function search(append, p = '') {
+  const q = $('#' + p + 'q').value.trim(), out = $('#' + p + 'results');
   if (!q) return;
   run(async () => {
-    const url = '/feed/search?q=' + encodeURIComponent(q) + (append && nextCursor ? '&cursor=' + encodeURIComponent(nextCursor) : '');
+    const url = '/feed/search?q=' + encodeURIComponent(q) + (append && nextCursor[p] ? '&cursor=' + encodeURIComponent(nextCursor[p]) : '');
     const data = await (await fetch(url)).json();
-    nextCursor = data.nextCursor;
-    const rows = data.items.map(t => trackRow(t, `<button onclick="addToSet(${t.trackId})">담기</button>`)).join('')
-      + (data.hasMore ? '<div class="bar"><button onclick="search(true)">더보기</button></div>' : '');
-    $('#results').querySelector('.bar')?.remove();
-    if (append) $('#results').insertAdjacentHTML('beforeend', rows);
-    else $('#results').innerHTML = rows || '<p class="muted">결과 없음</p>';
+    nextCursor[p] = data.nextCursor;
+    const add = p ? 'addToSeed' : 'addToSet';
+    const rows = data.items.map(t => trackRow(t, `<button onclick="${add}(${t.trackId})">담기</button>`)).join('')
+      + (data.hasMore ? `<div class="bar"><button onclick="search(true,'${p}')">더보기</button></div>` : '');
+    out.querySelector('.bar')?.remove();
+    if (append) out.insertAdjacentHTML('beforeend', rows);
+    else out.innerHTML = rows || '<p class="muted">결과 없음</p>';
   });
 }
 
@@ -444,6 +479,65 @@ function sendPush() {
   });
 }
 
+/* ---------- 픽 시딩 ---------- */
+let seedItems = [];
+
+function addToSeed(trackId) {
+  if (seedItems.some(x => x.trackId === trackId)) return toast('이미 담았다');
+  seedItems.push(seen[trackId]);
+  renderSeed();
+}
+function seedMove(i, d) {
+  const j = i + d;
+  if (j < 0 || j >= seedItems.length) return;
+  [seedItems[i], seedItems[j]] = [seedItems[j], seedItems[i]];
+  renderSeed();
+}
+function seedRemove(i) { seedItems.splice(i, 1); renderSeed(); }
+
+function renderSeed() {
+  $('#seedSet').innerHTML = seedItems.length
+    ? seedItems.map((t, i) => trackRow(t, `<button onclick="seedMove(${i},-1)">↑</button><button onclick="seedMove(${i},1)">↓</button><button onclick="seedRemove(${i})">✕</button>`)).join('')
+    : '<p class="muted">곡을 담을 것 — 위에서부터 재생 순서</p>';
+  $('#seedInfo').textContent = seedItems.length + '곡';
+}
+
+function loadSeed() {
+  renderSeed();
+  run(async () => {
+    const { accounts, picks, mix } = await api('GET', '/internal/admin/seed-picks');
+    $('#seedStatus').innerHTML = `<p class="muted">운영 계정 ${accounts}개 · 지면 구성 ${mix.map(m => `${m.kind} ${m.picks}픽/${m.accounts}계정`).join(' · ')}</p>
+      <table><tr><th>pick</th><th>계정</th><th>제목</th><th>올린 날</th><th>곡</th><th>재생</th><th>🔥</th><th></th></tr>
+      ${picks.map(p => `<tr><td>${p.pickId}</td><td>${esc(p.owner)}</td><td>${esc(p.title) || '<span class="muted">(폴백)</span>'}</td>
+        <td>${p.created}</td><td>${p.tracks}</td><td>${p.plays}</td><td>${p.reactions}</td>
+        <td>${p.available ? `<button onclick="seedReact(${p.pickId})">🔥 +1</button> <span class="muted">${p.available}개 더 가능</span>` : '<span class="muted">계정 소진</span>'}</td></tr>`).join('')}</table>`;
+  });
+}
+
+function postSeed() {
+  const nickname = $('#sNick').value.trim(), title = $('#sTitle').value.trim();
+  const reactions = Number($('#sReact').value) || 0;
+  if (!/^[a-zA-Z0-9_가-힣]{1,20}$/.test(nickname)) return toast('닉네임은 영문·숫자·_·한글 20자까지');
+  if (!seedItems.length) return toast('곡을 담을 것');
+  const names = seedItems.map((t, i) => `${i + 1}. ${t.artistName} - ${t.trackName}`).join('\n');
+  if (!confirm(`${nickname} 계정으로 바로 게시한다. 🔥 ${reactions}개.\n\n${title || '(제목 없음)'}\n${names}`)) return;
+  run(async () => {
+    const r = await api('POST', '/internal/admin/seed-picks', { nickname, title, trackIds: seedItems.map(t => t.trackId), reactions });
+    toast(`pick ${r.pickId} 게시 — 🔥 ${r.reactions}개` + (r.reactions < reactions ? ' (운영 계정이 모자랐다)' : ''));
+    seedItems = [];
+    $('#sNick').value = $('#sTitle').value = '';
+    loadSeed();
+  });
+}
+
+function seedReact(pickId) {
+  run(async () => {
+    const n = await api('POST', `/internal/admin/seed-picks/${pickId}/react?count=1`);
+    toast(n ? `pick ${pickId}에 🔥 +1` : '더 누를 운영 계정이 없다');
+    loadSeed();
+  });
+}
+
 /* ---------- 현황 ---------- */
 function loadGenreStats() {
   run(async () => {
@@ -535,7 +629,7 @@ async function backfillArtistId() {
 }
 
 /* ---------- 탭 ---------- */
-const loaders = { curation: loadSet, artist: loadRequests, push: loadUsers,
+const loaders = { curation: loadSet, artist: loadRequests, push: loadUsers, seed: loadSeed,
                   stats: () => { loadGenreStats(); loadKoPending(); loadArtistIdPending(); } };
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));

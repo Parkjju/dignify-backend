@@ -45,6 +45,7 @@ public enum ErrorCode {
     // Pick domain
     PICK_DOES_NOT_EXIST(HttpStatus.NOT_FOUND, "픽이 존재하지 않습니다."),
     PICK_TITLE_BLOCKED(HttpStatus.BAD_REQUEST, "입력하신 내용에 제한이 되는 단어가 포함되어 있습니다."),
+    PICK_NOT_SEED_OWNED(HttpStatus.BAD_REQUEST, "운영 계정 픽에만 반응을 넣을 수 있습니다."),
 
     // Reaction domain
     INVALID_EMOJI(HttpStatus.BAD_REQUEST, "유효하지 않은 이모지입니다."),

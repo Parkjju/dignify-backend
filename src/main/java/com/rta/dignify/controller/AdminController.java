@@ -5,14 +5,17 @@ import com.rta.dignify.dto.admin.ArtistRequestItem;
 import com.rta.dignify.dto.admin.GenreStat;
 import com.rta.dignify.dto.admin.KoBatch;
 import com.rta.dignify.dto.admin.PushTargets;
+import com.rta.dignify.dto.admin.SeedPickCreate;
 import com.rta.dignify.dto.feed.FeedItem;
 import com.rta.dignify.dto.itunes.ItunesItem;
 import com.rta.dignify.global.security.InternalSecrets;
 import com.rta.dignify.service.AdminService;
+import com.rta.dignify.service.SeedPickService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /// 어드민 화면용. 화면은 /internal/admin.html에 있고, 발송/요청처리는 기존
 /// /internal/push/broadcast, /internal/artist-requests/{id}/resolve를 그대로 쓴다.
@@ -22,6 +25,7 @@ import java.util.List;
 public class AdminController {
 
     private final AdminService adminService;
+    private final SeedPickService seedPickService;
     private final InternalSecrets internalSecrets;
 
     @GetMapping("/curation")
@@ -87,5 +91,24 @@ public class AdminController {
     public PushTargets getPushTargets(@RequestHeader("X-Cron-Secret") String secret) {
         internalSecrets.verifyAdmin(secret);
         return adminService.getPushTargets();
+    }
+
+    @GetMapping("/seed-picks")
+    public Map<String, Object> getSeedPickStatus(@RequestHeader("X-Cron-Secret") String secret) {
+        internalSecrets.verifyAdmin(secret);
+        return seedPickService.status();
+    }
+
+    @PostMapping("/seed-picks")
+    public Map<String, Object> createSeedPick(@RequestHeader("X-Cron-Secret") String secret, @RequestBody SeedPickCreate request) {
+        internalSecrets.verifyAdmin(secret);
+        return seedPickService.create(request);
+    }
+
+    /// 실제로 붙은 수를 돌려준다. 시드 계정이 모자라면 count보다 작다.
+    @PostMapping("/seed-picks/{pickId}/react")
+    public int reactSeedPick(@RequestHeader("X-Cron-Secret") String secret, @PathVariable Long pickId, @RequestParam int count) {
+        internalSecrets.verifyAdmin(secret);
+        return seedPickService.react(pickId, count);
     }
 }
