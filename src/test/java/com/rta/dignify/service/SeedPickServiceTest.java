@@ -66,15 +66,32 @@ public class SeedPickServiceTest {
     }
 
     @Test
-    @DisplayName("실유저 픽에는 🔥를 못 넣는다 - 첫 반응 푸시가 막히기 때문")
-    void reactRejectsRealUserPick() {
+    @DisplayName("실유저 픽 🔥는 앱 경로를 타서 마일스톤이 기록된다 - 안 그러면 첫 반응 푸시가 영영 안 간다")
+    void reactOnRealUserPickRecordsMilestone() {
         userRepository.save(User.create("seed01@dignify.local", "old_seed1"));
         User real = userRepository.save(User.create("real@gmail.com", "real_user"));
         Pick pick = pickRepository.save(Pick.create(real, null, false));
 
-        assertThatThrownBy(() -> seedPickService.react(pick.getId(), 1))
-                .isInstanceOf(BusinessException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PICK_NOT_SEED_OWNED);
+        assertThat(seedPickService.react(pick.getId(), 3)).isEqualTo(1);
+        // markNotified는 영속성 컨텍스트에 있다(커밋 때 flush) — JDBC로 읽으면 아직 0이다.
+        assertThat(pickRepository.findById(pick.getId()).orElseThrow().getMaxNotifiedReactions()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("하입 - 곡마다 per명, 다시 눌러도 이미 한 계정은 건너뛴다")
+    void hypePickTracks() {
+        userRepository.save(User.create("seed01@dignify.local", "old_seed1"));
+        userRepository.save(User.create("seed02@dignify.local", "old_seed2"));
+        User real = userRepository.save(User.create("real@gmail.com", "real_user"));
+        List<Long> ids = tracks(2);
+        Pick pick = pickRepository.save(Pick.create(real, null, false));
+        ids.forEach(id -> jdbcTemplate.update(
+                "INSERT INTO pick_tracks (pick_id, track_id, position, created_at, updated_at) VALUES (?, ?, 0 + ?, NOW(), NOW())",
+                pick.getId(), id, ids.indexOf(id)));
+
+        assertThat(seedPickService.hype(pick.getId(), 1)).isEqualTo(2);
+        assertThat(seedPickService.hype(pick.getId(), 5)).isEqualTo(2);  // 계정 2개라 곡마다 1명 더
+        assertThat(seedPickService.hype(pick.getId(), 5)).isZero();
     }
 
     @Test

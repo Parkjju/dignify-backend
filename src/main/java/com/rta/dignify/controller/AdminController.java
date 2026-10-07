@@ -111,4 +111,11 @@ public class AdminController {
         internalSecrets.verifyAdmin(secret);
         return seedPickService.react(pickId, count);
     }
+
+    /// 픽 곡마다 운영 계정 per명이 하입한다. 새로 들어간 하입 수를 돌려준다.
+    @PostMapping("/seed-picks/{pickId}/hype")
+    public int hypeSeedPick(@RequestHeader("X-Cron-Secret") String secret, @PathVariable Long pickId, @RequestParam int per) {
+        internalSecrets.verifyAdmin(secret);
+        return seedPickService.hype(pickId, per);
+    }
 }

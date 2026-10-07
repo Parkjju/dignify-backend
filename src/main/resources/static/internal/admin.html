@@ -162,9 +162,11 @@
           🔥는 기존 운영 계정 수까지만 붙는다(소유자는 자기 픽에 못 누른다).</p>
       </div>
     </div>
-    <h2 style="margin-top:18px">운영 계정 픽</h2>
+    <h2 style="margin-top:18px">최신 픽 (실유저 포함)</h2>
+    <div class="row" style="max-width:420px"><label style="white-space:nowrap">하입: 곡마다 운영 계정</label><input id="sPer" type="number" min="1" value="1"><span>명</span></div>
     <div id="seedStatus"></div>
-    <p class="muted">🔥 더하기는 운영 계정 픽에만 된다. 실유저 픽에 넣으면 "첫 반응" 푸시가 영영 안 나가서 서버가 막는다 — 실유저 픽엔 앱에서 직접 누를 것.<br>
+    <p class="muted">🔥는 앱과 같은 경로로 들어간다 — <b>실유저 픽이면 1·5·10번째 🔥에서 주인에게 푸시가 바로 나간다</b>(시간대 필터 없음, 한국 새벽이면 피할 것).<br>
+      하입은 곡의 전역 인기 점수라 많이 붙이면 그 곡이 신규 유저 첫 피드를 점령한다. 곡당 1~2명까지만.<br>
       seed 비중이 과하면 실유저 픽이 첫 페이지에서 밀려난다.</p>
   </section>
 
@@ -507,10 +509,11 @@ function loadSeed() {
   run(async () => {
     const { accounts, picks, mix } = await api('GET', '/internal/admin/seed-picks');
     $('#seedStatus').innerHTML = `<p class="muted">운영 계정 ${accounts}개 · 지면 구성 ${mix.map(m => `${m.kind} ${m.picks}픽/${m.accounts}계정`).join(' · ')}</p>
-      <table><tr><th>pick</th><th>계정</th><th>제목</th><th>올린 날</th><th>곡</th><th>재생</th><th>🔥</th><th></th></tr>
-      ${picks.map(p => `<tr><td>${p.pickId}</td><td>${esc(p.owner)}</td><td>${esc(p.title) || '<span class="muted">(폴백)</span>'}</td>
-        <td>${p.created}</td><td>${p.tracks}</td><td>${p.plays}</td><td>${p.reactions}</td>
-        <td>${p.available ? `<button onclick="seedReact(${p.pickId})">🔥 +1</button> <span class="muted">${p.available}개 더 가능</span>` : '<span class="muted">계정 소진</span>'}</td></tr>`).join('')}</table>`;
+      <table><tr><th>pick</th><th>구분</th><th>계정</th><th>제목</th><th>올린 날</th><th>곡</th><th>재생</th><th>🔥</th><th>운영 하입</th><th></th></tr>
+      ${picks.map(p => `<tr><td>${p.pickId}</td><td>${p.kind === 'user' ? '<b>user</b>' : 'seed'}</td><td>${esc(p.owner)}</td><td>${esc(p.title) || '<span class="muted">(폴백)</span>'}</td>
+        <td>${p.created}</td><td>${p.tracks}</td><td>${p.plays}</td><td>${p.reactions}</td><td>${p.seedHypes}</td>
+        <td style="white-space:nowrap">${p.available ? `<button onclick="seedReact(${p.pickId}, '${p.kind}')">🔥 +1</button>` : '<span class="muted">🔥 소진</span>'}
+          <button onclick="seedHype(${p.pickId})">하입</button></td></tr>`).join('')}</table>`;
   });
 }
 
@@ -530,10 +533,21 @@ function postSeed() {
   });
 }
 
-function seedReact(pickId) {
+function seedReact(pickId, kind) {
+  if (kind === 'user' && !confirm(`pick ${pickId}는 실유저 픽이다. 마일스톤(1·5·10번째)이면 주인에게 푸시가 바로 나간다.`)) return;
   run(async () => {
     const n = await api('POST', `/internal/admin/seed-picks/${pickId}/react?count=1`);
     toast(n ? `pick ${pickId}에 🔥 +1` : '더 누를 운영 계정이 없다');
+    loadSeed();
+  });
+}
+
+function seedHype(pickId) {
+  const per = Number($('#sPer').value) || 0;
+  if (per < 1) return toast('곡마다 몇 명인지 1 이상으로');
+  run(async () => {
+    const n = await api('POST', `/internal/admin/seed-picks/${pickId}/hype?per=${per}`);
+    toast(n ? `pick ${pickId} 곡들에 하입 ${n}개` : '새로 하입할 운영 계정이 없다');
     loadSeed();
   });
 }

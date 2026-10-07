@@ -1,6 +1,7 @@
 package com.rta.dignify.service;
 
 import com.rta.dignify.dto.admin.SeedPickCreate;
+import com.rta.dignify.dto.pick.PickReactionRequest;
 import com.rta.dignify.global.exception.BusinessException;
 import com.rta.dignify.global.exception.ErrorCode;
 import com.rta.dignify.global.util.ProfanityFilter;
@@ -29,6 +30,7 @@ public class SeedPickService {
     private final JdbcTemplate jdbcTemplate;
     private final UserRepository userRepository;
     private final TrackRepository trackRepository;
+    private final PickService pickService;
 
     /// 새 계정 생성 → 픽 게시 → 소유자가 곡 전부 하입 → 기존 시드 계정이 🔥. 한 트랜잭션이다.
     ///
@@ -93,56 +95,77 @@ public class SeedPickService {
         return Map.of("pickId", pickId, "userId", userId, "reactions", reactions);
     }
 
-    /// 시드 픽에 🔥를 want개까지 더 붙인다. 소유자·이미 누른 계정은 빠지고, 모자라면 있는 만큼만 들어간다.
-    /// 반환값이 실제로 붙은 수다.
+    /// 픽에 운영 계정 🔥를 want개까지 더 붙인다. 소유자·이미 누른 계정은 빠지고, 모자라면 있는 만큼만 들어간다.
+    /// 반환값이 실제로 붙은 수다. 실유저 픽에도 된다.
     ///
-    /// ⚠️ **실유저 픽은 0행이다(owner email 조인이 막는다).** SQL 반응은 앱을 안 거쳐
-    /// max_notified_reactions가 0으로 남는다. 실유저 픽에 1개를 심으면 진짜 유저가 눌렀을 때 count가 2가 되는데
-    /// 2는 마일스톤이 아니라서 "첫 반응" 푸시가 영영 안 간다.
+    /// **SQL로 넣지 않고 앱과 같은 `PickService.setReaction`을 탄다.** SQL 반응은 max_notified_reactions를
+    /// 안 올려서, 실유저 픽에 1개를 심으면 진짜 유저가 눌렀을 때 count가 2(마일스톤 아님)가 돼
+    /// "첫 반응" 푸시가 영영 안 간다. 이 경로면 1·5·10번째에서 소유자에게 푸시가 **바로** 나간다
+    /// (반응 푸시엔 시간대 필터가 없다). 운영 계정 픽은 소유자 기기가 없어 no-op이다.
     @Transactional
     public int react(Long pickId, int want) {
-        Boolean seedOwned = jdbcTemplate.query("""
-                SELECT o.email LIKE ? FROM picks p JOIN users o ON o.user_id = p.user_id
-                WHERE p.pick_id = ? AND p.is_deleted = FALSE
-                """, rs -> rs.next() ? rs.getBoolean(1) : null, SEED_EMAIL, pickId);
-        if (seedOwned == null) {
-            throw new BusinessException(ErrorCode.PICK_DOES_NOT_EXIST);
-        }
-        if (!seedOwned) {
-            throw new BusinessException(ErrorCode.PICK_NOT_SEED_OWNED);
-        }
         if (want <= 0) return 0;
-        // 이모지는 🔥만. 클라는 PickReaction.primary 하나만 그린다.
-        return jdbcTemplate.update("""
-                INSERT INTO pick_reactions (pick_id, user_id, emoji, created_at, updated_at)
-                SELECT p.pick_id, u.user_id, '🔥', NOW(), NOW()
-                FROM picks p
+        List<Long> reactors = jdbcTemplate.queryForList("""
+                SELECT u.user_id FROM picks p
                 JOIN users u ON u.email LIKE ? AND u.user_id <> p.user_id
-                WHERE p.pick_id = ?
+                WHERE p.pick_id = ? AND p.is_deleted = FALSE
                   AND NOT EXISTS (SELECT 1 FROM pick_reactions x WHERE x.pick_id = p.pick_id AND x.user_id = u.user_id)
-                ORDER BY random()   -- 매일 같은 계정만 누르면 그것도 티가 난다
+                ORDER BY random()   -- 매번 같은 계정만 누르면 그것도 티가 난다
                 LIMIT ?
-                """, SEED_EMAIL, pickId, want);
+                """, Long.class, SEED_EMAIL, pickId, want);
+        // 이모지는 🔥만. 클라는 PickReaction.primary 하나만 그린다.
+        reactors.forEach(userId -> pickService.setReaction(userId, pickId, new PickReactionRequest("🔥")));
+        return reactors.size();
     }
 
-    /// 현황 한 판(`ops/picks-seed-status.sql`). available = 아직 안 누른 시드 계정 수(더 붙일 수 있는 최대치).
+    /// 픽의 곡마다 운영 계정 per명이 하입한다(이미 한 계정은 건너뛴다). 반환값은 새로 들어간 하입 수.
+    /// 곡 상세의 firstHypers에 이 닉네임들이 뜬다.
+    ///
+    /// ponytail: 하입은 곡의 전역 인기 점수라 ColdStartRecommender 풀(하입 × 5, 상위 120곡)을 직접 민다.
+    /// 지금 하입 총량이 작아 곡당 2~3개만 붙여도 신규 유저 첫 피드에 그 곡이 올라온다. 상한은 화면에서 per로만 건다.
+    @Transactional
+    public int hype(Long pickId, int per) {
+        if (per <= 0) return 0;
+        return jdbcTemplate.update("""
+                INSERT INTO users_hype_tracks (user_id, track_id, is_seed, created_at, updated_at)
+                SELECT u.user_id, pt.track_id, FALSE, NOW(), NOW()
+                FROM pick_tracks pt
+                JOIN picks p ON p.pick_id = pt.pick_id AND p.is_deleted = FALSE
+                CROSS JOIN LATERAL (
+                    SELECT u.user_id FROM users u
+                    WHERE u.email LIKE ? AND u.user_id <> p.user_id
+                      AND NOT EXISTS (SELECT 1 FROM users_hype_tracks h WHERE h.user_id = u.user_id AND h.track_id = pt.track_id)
+                    ORDER BY random()
+                    LIMIT ?
+                ) u
+                WHERE pt.pick_id = ?
+                ON CONFLICT (user_id, track_id) DO NOTHING
+                """, SEED_EMAIL, per, pickId);
+    }
+
+    /// 현황 한 판(`ops/picks-seed-status.sql`). 실유저 픽까지 최신 40개.
+    /// available = 아직 안 누른 운영 계정 수(더 붙일 수 있는 최대치), seedHypes = 픽 곡들에 붙은 운영 계정 하입 수.
     /// mix는 지면 구성 — seed 비중이 과하면 실유저 픽이 첫 페이지에서 밀려난다.
     @Transactional(readOnly = true)
     public Map<String, Object> status() {
         List<Map<String, Object>> picks = jdbcTemplate.queryForList("""
                 SELECT p.pick_id AS "pickId", o.nickname AS owner, p.title, p.created_at::date::text AS created,
+                       CASE WHEN o.email LIKE ? THEN 'seed' ELSE 'user' END AS kind,
                        p.play_count AS plays,
                        (SELECT count(*) FROM pick_tracks t WHERE t.pick_id = p.pick_id)    AS tracks,
                        (SELECT count(*) FROM pick_reactions r WHERE r.pick_id = p.pick_id) AS reactions,
                        (SELECT count(*) FROM users u
                          WHERE u.email LIKE ? AND u.user_id <> p.user_id
                            AND NOT EXISTS (SELECT 1 FROM pick_reactions r
-                                            WHERE r.pick_id = p.pick_id AND r.user_id = u.user_id)) AS available
+                                            WHERE r.pick_id = p.pick_id AND r.user_id = u.user_id)) AS available,
+                       (SELECT count(*) FROM pick_tracks t JOIN users_hype_tracks h ON h.track_id = t.track_id
+                          JOIN users u ON u.user_id = h.user_id AND u.email LIKE ?
+                         WHERE t.pick_id = p.pick_id)                                       AS "seedHypes"
                 FROM picks p JOIN users o ON o.user_id = p.user_id
-                WHERE o.email LIKE ? AND p.is_deleted = FALSE
+                WHERE p.is_deleted = FALSE
                 ORDER BY p.pick_id DESC
-                LIMIT 30
-                """, SEED_EMAIL, SEED_EMAIL);
+                LIMIT 40
+                """, SEED_EMAIL, SEED_EMAIL, SEED_EMAIL);
         List<Map<String, Object>> mix = jdbcTemplate.queryForList("""
                 SELECT CASE WHEN o.email LIKE ? THEN 'seed' ELSE 'user' END AS kind,
                        count(*) AS picks, count(DISTINCT p.user_id) AS accounts
