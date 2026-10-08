@@ -1,5 +1,6 @@
 package com.rta.dignify.service;
 
+import com.rta.dignify.client.discord.DiscordNotifier;
 import com.rta.dignify.domain.ArtistRequest;
 import com.rta.dignify.domain.RequestStatus;
 import com.rta.dignify.domain.User;
@@ -19,11 +20,14 @@ import java.util.List;
 public class ArtistRequestService {
     private final ArtistRequestRepository repository;
     private final UserRepository userRepository;
+    private final DiscordNotifier discordNotifier;
 
     @Transactional
     public ArtistRequestResponse create(Long userId, String artistName) {
         User user = userRepository.getReferenceById(userId);   // ListenService와 동일 패턴
-        return ArtistRequestResponse.from(repository.save(ArtistRequest.create(user, artistName.trim())));
+        ArtistRequestResponse res = ArtistRequestResponse.from(repository.save(ArtistRequest.create(user, artistName.trim())));
+        discordNotifier.notify("🎤 새 아티스트 요청: **" + res.artistName() + "** (user " + userId + ", #" + res.id() + ")");
+        return res;
     }
 
     @Transactional(readOnly = true)
