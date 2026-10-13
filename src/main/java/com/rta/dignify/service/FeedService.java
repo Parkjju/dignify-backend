@@ -117,8 +117,9 @@ public class FeedService {
         }
         // 세 경로가 전부 조용히 서로에게 떨어진다. 어디로 나갔는지 한 줄 남긴다 —
         // 안 남기면 "무드가 도는 건가, 콜드스타트인가, 그냥 무작위인가"를 확인할 방법이 없다.
-        log.info("[feed] userId={} offset={} source={} size={}", userId, cursor.genreOffset(),
-                ordered.isEmpty() ? "random" : source, ordered.size());
+        // 보낸 곡 id도 남긴다 — 페이지 간 중복(KAN-23)은 이 줄만으로 셀 수 있어야 한다. 줄당 30개라 무시할 양이다.
+        log.info("[feed] userId={} offset={} source={} size={} ids={}", userId, cursor.genreOffset(),
+                ordered.isEmpty() ? "random" : source, ordered.size(), ordered);
         if (ordered.isEmpty()) {
             List<Track> random = new ArrayList<>(trackRepository.findRandomTracksExceptHyped(
                     userId, FeedService.FETCH_LIMIT, cursor.genreOffset(), cursor.seed()));
