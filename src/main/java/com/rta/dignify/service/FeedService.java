@@ -2,6 +2,7 @@ package com.rta.dignify.service;
 
 import com.rta.dignify.domain.CurationTrack;
 import com.rta.dignify.domain.Track;
+import com.rta.dignify.domain.User;
 import com.rta.dignify.dto.feed.CurationResponse;
 import com.rta.dignify.dto.feed.FeedCursor;
 import com.rta.dignify.dto.feed.FeedItem;
@@ -70,13 +71,7 @@ public class FeedService {
         //
         // `genreExhausted`는 항상 false다. 앱이 이 값으로 "장르가 소진됐다" 토스트를 띄우는데
         // 장르 선택이 없어진 지금은 띄울 말이 아니다. 응답 필드는 남긴다 — 빼면 앱이 깨진다.
-        // **페이지 길이로 소진을 판정하지 않는다(2026-08-24).** 무드 정렬은 스캔 창 안이 전부
-        // 걸러지면 짧은 페이지를 내는데, 그건 곡이 없어서가 아니라 창이 좁아서다. 길이로 끊으면
-        // 아래에 2만 곡이 남아 있는 유저의 피드가 그 자리에서 닫힌다.
-        //
-        // 오프셋은 짧은 페이지에도 FETCH_LIMIT만큼 민다. 받은 수만큼만 밀면 다음 요청의 창이
-        // 거의 안 커져서 같은 자리를 몇 번씩 오간다. 못 본 곡 몇 개를 건너뛰는 편이 낫다 —
-        // 디깅 피드라 2만 8천 곡 중 몇 개는 티가 안 나고, 요청이 헛도는 건 티가 난다.
+        // 오프셋은 무드 경로에선 위치가 아니다(위치는 users.feed_state의 θ). 페이지 안 섞기 씨앗으로만 쓴다.
         if (page.moreBelow()) {
             newCursor = new FeedCursor(currentCursor.phase(), currentCursor.genreOffset() + FeedService.FETCH_LIMIT, currentCursor.generalOffset(), currentCursor.seed());
             response = new FeedResponse(feedItems, newCursor.encode(), true, false);
@@ -94,32 +89,25 @@ public class FeedService {
     /// 즉 지금 피드가 그대로 최악의 경우다.
     /// 디깅 성향이 켜져 있는지. 게스트는 끌 자리가 없으므로 항상 켜진 것으로 본다.
     /// 유저 행이 없어도 켜짐이다 — 판단이 안 서면 지금 동작을 유지하는 쪽이 안전하다.
-    private boolean diggingModeOn(Long userId) {
-        if (userId == null) {
-            return true;
-        }
-        return userRepository.findById(userId).map(user -> Boolean.TRUE.equals(user.getDiggingMode())).orElse(true);
+    private static boolean diggingModeOn(User user) {
+        return user == null || Boolean.TRUE.equals(user.getDiggingMode());
     }
 
     /// 한 페이지의 곡과 "왜 떴는지", 그리고 아래에 더 있는지.
-    ///
-    /// `moreBelow`를 페이지 길이로 대신할 수 없어서 따로 싣는다. 무드 경로는 스캔 창 안이
-    /// 전부 걸러지면 짧은 페이지를 내는데 그건 소진이 아니다. 무작위 폴백은 테이블에서 바로
-    /// 뜨므로 짧은 게 곧 소진이고, 콜드스타트는 창을 못 채우면 아예 빈 리스트를 낸다.
-    /// 판단 근거가 셋 다 달라서 만든 쪽이 답을 같이 넘긴다.
     private record GenrePage(List<Track> tracks, Map<Long, FeedItem.SimilarTo> similar, boolean moreBelow) {
     }
 
     private GenrePage genreTracks(Long userId, FeedCursor cursor) {
+        User user = userId == null ? null : userRepository.findById(userId).orElse(null);
         // 디깅 성향을 끈 유저는 개인화 두 경로를 통째로 건너뛴다. 콜드스타트도 안 태운다 —
         // 그건 커뮤니티 인기순이라 "제약 없는 무작위"라는 약속과 다르다.
-        if (!diggingModeOn(userId)) {
+        if (!diggingModeOn(user)) {
             log.info("[feed] userId={} offset={} source=off size=0", userId, cursor.genreOffset());
             List<Track> random = new ArrayList<>(trackRepository.findRandomTracksExceptHyped(
                     userId, FeedService.FETCH_LIMIT, cursor.genreOffset(), cursor.seed()));
             return new GenrePage(random, Map.of(), random.size() == FETCH_LIMIT);
         }
-        List<Long> ordered = moodRecommender.orderedTrackIds(userId, FETCH_LIMIT, cursor.genreOffset());
+        List<Long> ordered = moodRecommender.orderedTrackIds(user, FETCH_LIMIT);
         String source = "mood";
         // 하입이 없으면(게스트·신규) 무드가 성립하지 않는다. 그 자리를 무작위가 아니라
         // 커뮤니티 인기 풀로 받는다 — 첫 하입이 안 나오면 개인화가 시작되지 않기 때문이다.
@@ -141,17 +129,14 @@ public class FeedService {
                 .collect(Collectors.toMap(Track::getId, Function.identity()));
         List<Track> tracks = ordered.stream().map(byId::get).filter(Objects::nonNull)
                 .collect(Collectors.toCollection(ArrayList::new));
-        // **페이지 안에서 순서를 섞는다.** 무드 정렬은 시드별 순번으로 내보내서 그대로 두면
-        // [A1,B1,C1][A2,B2,C2]... 모양이 된다. 같은 하입 곡이 늘 같은 자리에 서고 유사도가
-        // 페이지 내내 한 방향으로만 내려가서, 뒤로 갈수록 힘이 빠지는 느낌이 난다.
+        // **페이지 안에서 순서를 섞는다.** 무드 정렬은 점수 내림차순 한 줄이라 그대로 두면
+        // 유사도가 페이지 내내 한 방향으로만 내려가서, 뒤로 갈수록 힘이 빠지는 느낌이 난다.
         //
-        // 어떤 곡이 이 페이지에 들어갈지는 이미 정해졌고 순서만 바꾸므로 시드별 몫(10/10/10)은
-        // 그대로다. 커서의 seed와 오프셋으로 씨앗을 만들어 **같은 요청이면 같은 순서**가 나온다 —
-        // 매번 다르게 섞으면 같은 페이지를 다시 받았을 때 곡이 겹치거나 빠진다.
+        // 어떤 곡이 이 페이지에 들어갈지는 이미 정해졌고(θ는 섞기 전 30번째 점수로 저장됐다)
+        // 순서만 바꾼다. 커서의 seed와 오프셋으로 씨앗을 만들어 같은 요청이면 같은 순서가 나온다.
         //
-        // **앞 SEEDS칸은 안 섞는다.** SQL이 rn 순으로 내보내므로 그 자리는 하입 곡마다 가장 가까운
-        // 한 곡씩, 이 페이지에서 제일 좋은 카드다. 전부 섞으면 몇 칸 보고 나가는 유저가 그걸 못 본다.
-        // 앞에서 시드 셋이 이미 한 번씩 나오므로 첫인상이 한 곡에 쏠리지도 않는다.
+        // **앞 SEEDS칸은 안 섞는다.** 이 페이지에서 가장 가까운 곡들이라 제일 좋은 카드다.
+        // 전부 섞으면 몇 칸 보고 나가는 유저가 그걸 못 본다.
         //
         // 콜드스타트는 안 섞는다. 거기는 반응이 많은 곡이 앞에 서는 게 규칙이고, 그걸 지키려고
         // 그리디 순서를 일부러 되돌려 놓은 자리다(ColdStartRecommender.orderedTrackIds).
@@ -160,10 +145,9 @@ public class FeedService {
             Collections.shuffle(tracks.subList(head, tracks.size()),
                     new Random(cursor.seed() * 31L + cursor.genreOffset()));
         }
-        // 콜드스타트는 창(WINDOW)을 못 채우면 빈 리스트를 내므로 길이로 판단해도 맞다.
-        boolean moreBelow = "mood".equals(source)
-                ? moodRecommender.hasMoreBelow(FETCH_LIMIT, cursor.genreOffset())
-                : tracks.size() == FETCH_LIMIT;
+        // 무드는 한 페이지를 못 채우면 끝까지 본 것이다(사후 제외분만큼 더 뽑으므로 짧을 이유가 없다).
+        // 콜드스타트는 창(WINDOW)을 못 채우면 빈 리스트를 내므로 역시 길이로 판단해도 맞다.
+        boolean moreBelow = ordered.size() == FETCH_LIMIT;
         return new GenrePage(tracks, "mood".equals(source) ? similarTo(userId, ordered) : Map.of(), moreBelow);
     }
 

@@ -1,5 +1,6 @@
 package com.rta.dignify.service;
 
+import com.rta.dignify.domain.FeedState;
 import com.rta.dignify.service.MoodRecommender.Seed;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -34,58 +35,48 @@ class MoodRecommenderTest {
     @DisplayName("쿼리의 ? 개수가 넘기는 파라미터 개수와 맞는다")
     void 쿼리_플레이스홀더_개수() {
         for (int seedCount = 1; seedCount <= MoodRecommender.SEEDS; seedCount++) {
-            for (int genreCount = 0; genreCount <= 13; genreCount++) {
-                String sql = MoodRecommender.orderSql(seedCount, genreCount, 40);
-                // 내적(seed×차원) + 장르 + 하입 조인 userId + limit + offset
-                long expected = (long) seedCount * MoodRecommender.DIMS + genreCount + 1 + 2;
-                assertThat(sql.chars().filter(c -> c == '?').count()).isEqualTo(expected);
+            for (int droppedCount = 0; droppedCount <= FeedState.MAX_DROPPED; droppedCount++) {
+                for (int genreCount = 0; genreCount <= 13; genreCount++) {
+                    String sql = MoodRecommender.orderSql(seedCount, droppedCount, genreCount);
+                    // 내적(시드+빠진 시드)×차원 + 장르 + θ + 빠진 시드별 θ + limit + userId×2 + limit
+                    long expected = (long) (seedCount + droppedCount) * MoodRecommender.DIMS
+                            + genreCount + 1 + droppedCount + 1 + 2 + 1;
+                    assertThat(sql.chars().filter(c -> c == '?').count()).isEqualTo(expected);
+                }
             }
         }
     }
 
     @Test
-    @DisplayName("정렬은 유사도 내림차순이고, 동점은 track_id로 갈린다")
+    @DisplayName("한 줄 정렬이다 — 유사도 내림차순, 동점은 track_id, 번갈아 꺼내기 없음")
     void 정렬_키() {
-        String sql = MoodRecommender.orderSql(3, 1, 40);
-        // 동점 정렬이 페이지마다 흔들리면 OFFSET 페이징이 곡을 건너뛰거나 중복시킨다.
-        assertThat(sql).contains("ORDER BY sim DESC, track_id LIMIT 40");
-        assertThat(sql).contains("ORDER BY rn, sim DESC, track_id LIMIT ? OFFSET ?");
-        // 내적을 SELECT와 ORDER BY에서 두 번 계산하면 스캔 비용이 두 배가 된다.
-        assertThat(sql).containsOnlyOnce("GREATEST(");
+        String sql = MoodRecommender.orderSql(3, 2, 1);
+        assertThat(sql).endsWith("ORDER BY c.sim DESC, c.track_id LIMIT ?");
+        // 시드별 번갈아 꺼내기가 페이지 간 중복을 만들었다(KAN-23).
+        assertThat(sql).doesNotContain("ROW_NUMBER");
+        // 내적을 담은 층을 플래너가 펼치지 못하게 막는다. 펼치면 내적을 WHERE에서 또 곱해 27ms → 60ms다.
+        assertThat(sql).contains(" OFFSET 0) x ");
+        // 내적은 시드·빠진 시드마다 한 번씩만 적힌다. 두 번 적으면 스캔 비용이 두 배다.
+        assertThat(sql.split("v0\\*\\?", -1)).hasSize(3 + 2 + 1);
+        // 빠진 시드마다 그 시드와의 유사도로 거른다.
+        assertThat(sql).contains("AND d0 < ?").contains("AND d1 < ?");
     }
 
     @Test
-    @DisplayName("시드마다 몫을 준다 — 유사도 하나로만 줄 세우지 않는다")
-    void 시드별_라운드로빈() {
-        // rn이 첫 정렬 키다. 시드별 1등끼리, 2등끼리 묶여 나가야 세 시드가 고르게 섞인다.
-        // 유사도만으로 줄 세우면 밀집 지역에 있는 시드 하나가 페이지를 통째로 먹는다.
-        String sql = MoodRecommender.orderSql(3, 0, 40);
-        assertThat(sql).contains("ROW_NUMBER() OVER (PARTITION BY ");
-        assertThat(sql).contains("ORDER BY rn, ");
-
-        // 시드가 하나면 나눌 것이 없다. CASE를 세우면 상수 파티션에 쓸데없는 비교가 붙는다.
-        assertThat(MoodRecommender.bestSeedCase(1)).isEqualTo("0");
-        // 셋이면 가장 큰 내적을 가진 시드 번호로 갈린다. 마지막은 비교 없이 ELSE로 받는다.
-        assertThat(MoodRecommender.bestSeedCase(3))
-                .isEqualTo("CASE WHEN c.s0 >= c.s1 AND c.s0 >= c.s2 THEN 0 WHEN c.s1 >= c.s2 THEN 1 ELSE 2 END");
-    }
-
-    @Test
-    @DisplayName("장르는 스캔 안에서, 나머지 제외는 스캔 밖에서 건다")
+    @DisplayName("장르·활성은 스캔 안에서, 하입·큐레이션 제외는 스캔 밖에서 건다")
     void 제외_조건_위치() {
-        String sql = MoodRecommender.orderSql(3, 1, 40);
+        String sql = MoodRecommender.orderSql(3, 0, 1);
         int scanEnd = sql.indexOf(") c ");
 
-        // 장르가 스캔 안에 있어야 곱셈 전에 행이 걸러진다(실측 43.9ms → 6.6ms).
+        // 복제 컬럼이라 곱셈 전에 행이 걸러진다(실측 43.9ms → 6.6ms, 활성 30 → 23ms).
         assertThat(sql.indexOf("genre_id IN")).isBetween(0, scanEnd);
-        // 하입·큐레이션·활성 조인이 스캔 안에 들어가면 +203ms다.
-        assertThat(sql.indexOf("users_hype_tracks")).isGreaterThan(scanEnd);
-        assertThat(sql.indexOf("curation_tracks")).isGreaterThan(scanEnd);
-        assertThat(sql.indexOf("t.is_active")).isGreaterThan(scanEnd);
+        assertThat(sql.indexOf("is_active IS TRUE")).isBetween(0, scanEnd);
+        assertThat(sql).doesNotContain("JOIN tracks");
+        // 하입·큐레이션 조인이 스캔 안에 들어가면 +203ms다.
+        assertThat(sql.indexOf("LEFT JOIN users_hype_tracks")).isGreaterThan(scanEnd);
+        assertThat(sql.indexOf("LEFT JOIN curation_tracks")).isGreaterThan(scanEnd);
         // 리마스터·커버(유사도 0.95↑)는 정렬 앞자리를 통째로 먹는다.
-        assertThat(sql).contains("c.sim < 0.95");
-        // 시드 아티스트 제외는 2026-08-29에 뺐다 — 요청받은 적 없는 조건이었고,
-        // 활성 곡의 52.9%가 artist_id NULL이라 시드의 74%에서 걸리지도 않았다.
+        assertThat(sql).contains(" < 0.95");
         assertThat(sql).doesNotContain("artist_id");
     }
 
@@ -94,18 +85,39 @@ class MoodRecommenderTest {
     void 장르_미선택() {
         // 빈 IN 절(`genre_id IN ()`)은 문법 오류이고, 있는 척 넘기면 후보가 0이 돼
         // 그 유저만 조용히 무드 정렬에서 빠진다.
-        assertThat(MoodRecommender.orderSql(3, 0, 40)).doesNotContain("genre_id IN");
-        assertThat(MoodRecommender.orderSql(3, 1, 40)).contains("genre_id IN (?)");
-        assertThat(MoodRecommender.orderSql(3, 3, 40)).contains("genre_id IN (?,?,?)");
+        assertThat(MoodRecommender.orderSql(3, 0, 0)).doesNotContain("genre_id IN");
+        assertThat(MoodRecommender.orderSql(3, 0, 1)).contains("genre_id IN (?)");
+        assertThat(MoodRecommender.orderSql(3, 0, 3)).contains("genre_id IN (?,?,?)");
     }
 
     @Test
-    @DisplayName("스캔 창은 깊이 스크롤해도 필요한 수보다 넉넉하다")
-    void 스캔_창() {
-        // 전체 벡터의 25%가 비활성 트랙이라 필터로 걸러진다. 창이 빠듯하면 페이지가 짧아지고,
-        // 짧아진 페이지는 '장르 소진'으로 오해돼 general 폴백으로 넘어간다.
-        assertThat(MoodRecommender.scanWindow(10, 0)).isGreaterThanOrEqualTo(30);
-        assertThat(MoodRecommender.scanWindow(10, 100)).isGreaterThanOrEqualTo(150);
+    @DisplayName("피드 상태: 시드가 전부 바뀌면 처음부터, 일부만 바뀌면 빠진 시드를 θ와 함께 기억한다")
+    void 피드_상태() {
+        FeedState first = FeedState.begin(null, List.of(1L, 2L, 3L));
+        assertThat(first.theta()).isEqualTo(1.0);
+
+        // 셋째 칸만 바꿨다 → 3번이 그때의 θ로 dropped에 남는다. θ는 이어 간다.
+        FeedState swapped = FeedState.begin(first.sentDownTo(0.8), List.of(1L, 2L, 4L));
+        assertThat(swapped.theta()).isEqualTo(0.8);
+        assertThat(swapped.dropped()).containsExactly(new FeedState.Dropped(3L, 0.8));
+        assertThat(swapped.startSeeds()).containsExactly(1L, 2L, 3L);
+
+        // 셋째 칸을 여러 번 바꿔도 초기화하지 않고 오래된 것부터 잊는다.
+        FeedState state = swapped;
+        for (long seed = 5; seed < 12; seed++) {
+            state = FeedState.begin(state.sentDownTo(0.5), List.of(1L, 2L, seed));
+        }
+        assertThat(state.theta()).isEqualTo(0.5);
+        assertThat(state.dropped()).hasSize(FeedState.MAX_DROPPED);
+        assertThat(state.dropped().get(FeedState.MAX_DROPPED - 1).seedId()).isEqualTo(10L);
+
+        // 하입으로 한 칸씩 밀려 start_seeds와 하나도 안 겹치면 초기화.
+        FeedState shifted = FeedState.begin(first.sentDownTo(0.7), List.of(2L, 3L, 4L));
+        shifted = FeedState.begin(shifted.sentDownTo(0.6), List.of(3L, 4L, 5L));
+        assertThat(shifted.theta()).isEqualTo(0.6);
+        shifted = FeedState.begin(shifted.sentDownTo(0.5), List.of(4L, 5L, 6L));
+        assertThat(shifted.theta()).isEqualTo(1.0);
+        assertThat(shifted.dropped()).isEmpty();
     }
 
     @Test

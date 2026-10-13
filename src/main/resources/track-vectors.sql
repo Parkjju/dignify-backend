@@ -45,3 +45,18 @@ CREATE TABLE IF NOT EXISTS track_vectors (
 -- 이미 만들어진 테이블(운영·로컬)에 컬럼을 더한다. 새로 만든 경우엔 위에서 이미 생겨 no-op.
 ALTER TABLE track_vectors ADD COLUMN IF NOT EXISTS genre_id BIGINT;
 CREATE INDEX IF NOT EXISTS idx_track_vectors_genre ON track_vectors (genre_id);
+
+-- tracks.is_active 복제본. 비활성을 내적 계산 전에 거르려고 둔다(tracks 조인을 빼니 30→23ms, KAN-23).
+-- tracks.is_active는 앱 코드가 아니라 ops SQL로만 바뀐다 → 동기화는 트리거가 가장 싸다.
+-- 새 벡터 행은 load-vectors.sh가 tracks에서 복사한다. NULL이면 피드에 안 나온다(안전한 쪽).
+ALTER TABLE track_vectors ADD COLUMN IF NOT EXISTS is_active BOOLEAN;
+-- 기동마다 어긋난 행만 맞춘다. 평소엔 0행이라 조인 스캔 한 번이다.
+UPDATE track_vectors v SET is_active = t.is_active FROM tracks t
+ WHERE t.track_id = v.track_id AND v.is_active IS DISTINCT FROM t.is_active;
+-- 함수 본문을 $$가 아니라 작은따옴표로 감싼다 — 스프링 SQL 초기화가 ;로 문장을 자르는데 따옴표 안은 건너뛴다.
+CREATE OR REPLACE FUNCTION sync_track_vectors_is_active() RETURNS trigger LANGUAGE plpgsql AS
+'BEGIN UPDATE track_vectors SET is_active = NEW.is_active WHERE track_id = NEW.track_id; RETURN NEW; END';
+CREATE OR REPLACE TRIGGER trg_sync_track_vectors_is_active
+    AFTER UPDATE OF is_active ON tracks FOR EACH ROW
+    WHEN (OLD.is_active IS DISTINCT FROM NEW.is_active)
+    EXECUTE FUNCTION sync_track_vectors_is_active();

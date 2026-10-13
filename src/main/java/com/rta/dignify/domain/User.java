@@ -5,6 +5,8 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.ColumnDefault;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 
@@ -40,6 +42,11 @@ public class User extends BaseTimeEntity {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    /// 무드 피드 진행 위치. null이면 처음부터다(게스트·시드 없는 유저는 안 쓴다).
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "feed_state")
+    private FeedState feedState;
+
     private User(String email, String nickname) {
         this.email = email;
         this.nickname = nickname;
@@ -63,5 +70,9 @@ public class User extends BaseTimeEntity {
 
     public void changeDiggingMode(boolean enabled) {
         this.diggingMode = enabled;
+    }
+
+    public void updateFeedState(FeedState feedState) {
+        this.feedState = feedState;
     }
 }

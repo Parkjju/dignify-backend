@@ -18,8 +18,10 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -397,17 +399,19 @@ public class FeedServiceTest {
         // 커서를 직접 만든다. null로 넣으면 매번 새 seed가 뽑혀 순서 비교가 성립하지 않는다.
         String cursor = new FeedCursor(FeedCursor.Phase.GENRE, 0, 0, 12345).encode();
         List<Long> first = ids(feedService.getFeedList(user.getId(), cursor));
+        resetFeedState();
         List<Long> again = ids(feedService.getFeedList(user.getId(), cursor));
 
-        // 같은 커서로 다시 받았는데 순서가 달라지면, 같은 페이지를 다시 받았을 때 곡이 겹치거나
-        // 빠진다 — 커서는 오프셋만 들고 있어서 무엇을 이미 보여줬는지 기억하지 못한다.
+        // 같은 페이지를 같은 커서로 받으면 순서도 같아야 한다. 위치(θ)는 유저에 있어서
+        // 다시 받으려면 상태를 지워야 한다.
         assertThat(again).containsExactlyElementsOf(first);
 
+        resetFeedState();
         List<Long> other = ids(feedService.getFeedList(user.getId(),
                 new FeedCursor(FeedCursor.Phase.GENRE, 0, 0, 999).encode()));
-        // 어떤 곡이 이 페이지에 들어갈지는 시드별 순번이 정하고 섞기는 자리만 바꾼다.
+        // 어떤 곡이 이 페이지에 들어갈지는 점수가 정하고 섞기는 자리만 바꾼다.
         assertThat(other).containsExactlyInAnyOrderElementsOf(first);
-        // 앞 칸은 하입 곡마다 가장 가까운 한 곡씩이라 seed와 무관하게 그대로 서 있어야 한다.
+        // 앞 칸은 이 페이지에서 가장 가까운 곡들이라 seed와 무관하게 그대로 서 있어야 한다.
         assertThat(other.subList(0, MoodRecommender.SEEDS))
                 .containsExactlyElementsOf(first.subList(0, MoodRecommender.SEEDS));
         // 뒤쪽은 실제로 섞였는지. 우연히 같을 확률은 무시할 수 있다.
@@ -418,17 +422,15 @@ public class FeedServiceTest {
         return response.items().stream().map(FeedItem::trackId).toList();
     }
 
-    @Test
-    @DisplayName("""
-            1. 스캔 창 안이 전부 걸러져 페이지가 짧아도 피드를 끊지 않는다
-            2. 오프셋은 짧은 페이지에도 FETCH_LIMIT만큼 민다
-            """)
-    void shortMoodPageDoesNotEndFeed() {
-        // 유사도 순위는 벡터 전체를 덮으므로 짧은 페이지가 곧 소진은 아니다. 그걸 세우려면
-        // 벡터가 스캔 창(scanWindow(30,0) = 300)보다 많아야 한다 — 창이 전체를 덮어 버리면
-        // 그때는 정말 아래에 아무것도 없는 게 맞다.
+    private void resetFeedState() {
+        entityManager.getEntityManager().createNativeQuery("UPDATE users SET feed_state = NULL").executeUpdate();
+        entityManager.clear();
+    }
+
+    /// 무드 피드용 곡 n개를 만들고 벡터까지 넣는다.
+    private List<Track> bulkTracks(int count) {
         List<Track> bulk = new ArrayList<>();
-        for (int i = 0; i < 320; i++) {
+        for (int i = 0; i < count; i++) {
             Track track = Track.create("bulk-" + i, "Bulk Artist " + i, "Bulk Album " + i, "Bulk Track " + i,
                     "https://example.com/preview/bulk" + i + ".mp3", "https://example.com/track/bulk" + i,
                     "https://example.com/art/bulk" + i + ".jpg", Instant.now(), rockGenre, "US", "ITUNES");
@@ -436,36 +438,67 @@ public class FeedServiceTest {
             bulk.add(track);
         }
         entityManager.flush();
-
-        List<Track> all = Stream.concat(
-                Stream.of(rockTracks, balladTracks, countryTracks).flatMap(List::stream), bulk.stream()).toList();
-        int index = 0;
-        for (Track track : all) {
-            insertVector(track, index++);
+        for (int i = 0; i < count; i++) {
+            insertVector(bulk.get(i), i);
         }
+        return bulk;
+    }
 
-        // 세 곡만 남기고 전부 끈다. 상위 300개가 거의 다 걸러지는 상황을 만든 것이다.
-        List<Track> alive = all.subList(0, 3);
-        for (Track track : all) {
-            if (!alive.contains(track)) {
-                ReflectionTestUtils.setField(track, "isActive", false);
-                entityManager.persist(track);
-            }
+    @Test
+    @DisplayName("""
+            1. 커서 없이 다시 불러도 앞 페이지 곡이 다시 나오지 않는다(위치가 유저에 있다)
+            2. 시드 하나를 바꿔도 다음 페이지에 이전 곡이 0개다(KAN-23)
+            """)
+    void moodPagesDoNotRepeatAcrossSeedSwap() {
+        List<Track> bulk = bulkTracks(400);
+        for (Track track : List.of(bulk.get(0), bulk.get(1), bulk.get(2))) {
+            entityManager.persistAndFlush(UserHypeTrack.create(user, track));
         }
-        // 시드는 꺼진 곡이어도 된다 — findSeeds는 벡터와 하입만 본다.
-        entityManager.persistAndFlush(UserHypeTrack.create(user, all.get(100)));
+        userHypeTrackRepository.markSeeds(user.getId(), List.of(bulk.get(0).getId(), bulk.get(1).getId(), bulk.get(2).getId()));
         entityManager.clear();
 
-        FeedResponse response = feedService.getFeedList(user.getId(), null);
+        Set<Long> seen = new HashSet<>(ids(feedService.getFeedList(user.getId(), null)));
+        // 앱이 커서를 지운 상황(시드 변경 시 iOS가 그렇게 한다)을 null 커서로 흉내 낸다.
+        List<Long> second = ids(feedService.getFeedList(user.getId(), null));
+        assertThat(second).hasSize(FeedService.FETCH_LIMIT).doesNotContainAnyElementsOf(seen);
+        seen.addAll(second);
 
-        // 한 페이지를 못 채운다. 예전 판정이면 여기서 커서가 끊겨 피드가 끝났다.
-        assertThat(response.items()).hasSizeLessThan(FeedService.FETCH_LIMIT);
-        assertThat(response.hasMore()).isTrue();
-        assertThat(response.nextCursor()).isNotNull();
-        // 받은 수가 아니라 FETCH_LIMIT만큼 민다. 받은 수만큼 밀면 다음 창이 거의 안 커져
-        // 같은 자리에서 요청이 헛돈다.
-        assertThat(FeedCursor.decode(response.nextCursor()).genreOffset())
-                .isEqualTo(FeedService.FETCH_LIMIT);
+        // 셋째 시드를 멀리 있는 곡으로 바꾼다. 빠진 시드 덕분에 나갔던 곡이 다시 나오면 안 된다.
+        entityManager.persistAndFlush(UserHypeTrack.create(user, entityManager.find(Track.class, bulk.get(200).getId())));
+        userHypeTrackRepository.markSeeds(user.getId(), List.of(bulk.get(0).getId(), bulk.get(1).getId(), bulk.get(200).getId()));
+        entityManager.clear();
+
+        for (int page = 0; page < 3; page++) {
+            List<Long> next = ids(feedService.getFeedList(user.getId(), null));
+            assertThat(next).hasSize(FeedService.FETCH_LIMIT).doesNotContainAnyElementsOf(seen);
+            seen.addAll(next);
+        }
+    }
+
+    @Test
+    @DisplayName("""
+            1. 끝까지 보면 커서를 끊고 상태를 지운다
+            2. 꺼진 곡은 트리거로 벡터 쪽에도 꺼져 피드에 안 나온다
+            """)
+    void moodFeedEndsAndRestarts() {
+        List<Track> bulk = bulkTracks(40);
+        // 하나를 끈다. tracks만 바꿔도 track_vectors.is_active가 따라가야 한다.
+        Track off = bulk.get(5);
+        ReflectionTestUtils.setField(off, "isActive", false);
+        entityManager.persistAndFlush(off);
+        entityManager.persistAndFlush(UserHypeTrack.create(user, bulk.get(0)));
+        entityManager.clear();
+
+        List<Long> all = new ArrayList<>();
+        FeedResponse response;
+        do {
+            response = feedService.getFeedList(user.getId(), null);
+            all.addAll(ids(response));
+        } while (response.hasMore());
+
+        assertThat(response.nextCursor()).isNull();
+        assertThat(all).doesNotHaveDuplicates().doesNotContain(off.getId(), bulk.get(0).getId());
+        assertThat(entityManager.find(User.class, user.getId()).getFeedState()).isNull();
     }
 
     /// track_vectors는 엔티티가 없어 네이티브로 넣는다. v0/v1만 쓰고 나머지는 0이라 단위원 위의 점이고,
@@ -477,7 +510,7 @@ public class FeedServiceTest {
                 .mapToObj(d -> d == 0 ? String.valueOf(Math.cos(angle)) : d == 1 ? String.valueOf(Math.sin(angle)) : "0")
                 .collect(Collectors.joining(","));
         entityManager.getEntityManager().createNativeQuery(
-                "INSERT INTO track_vectors (track_id, genre_id," + columns + ") VALUES ("
-                        + track.getId() + "," + track.getGenre().getId() + "," + values + ")").executeUpdate();
+                "INSERT INTO track_vectors (track_id, genre_id, is_active," + columns + ") VALUES ("
+                        + track.getId() + "," + track.getGenre().getId() + "," + track.getIsActive() + "," + values + ")").executeUpdate();
     }
 }
