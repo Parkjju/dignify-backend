@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /// 발송 한 번(공지 1회, 반응 알림 1회)의 결과. 어드민 푸시 탭이 읽는다.
 ///
@@ -32,6 +33,12 @@ public class PushLog {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "push_log_id")
     private Long id;
+
+    /// 페이로드에 `push_id`로 실리는 값. 앱이 `app_opened_push`에 그대로 붙여 보내면
+    /// PostHog에서 이 발송을 눌러 연 수를 정확히 센다(열람률 = 연 사람 ÷ 수락).
+    /// DB id 대신 미리 만든 UUID인 이유: 행은 응답이 다 온 뒤에야 저장되는데 id는 저장해야 나온다.
+    @Column(name = "push_id", length = 36, unique = true)
+    private String pushId;
 
     /// broadcast(전체 공지) · test(userId 지정 공지) · pick_reaction(반응 알림)
     @Column(nullable = false, length = 20)
@@ -105,6 +112,7 @@ public class PushLog {
         this.minBuild = minBuild;
         this.force = force;
         this.sentAt = Instant.now();
+        this.pushId = UUID.randomUUID().toString();
     }
 
     public static PushLog start(String kind, String type, String title, String body, Long targetUserId, Integer minBuild, boolean force) {

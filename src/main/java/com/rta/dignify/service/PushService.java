@@ -79,7 +79,13 @@ public class PushService {
     /// `type`은 앱이 **누른 뒤 어디로 갈지**를 정하는 키다(APNs·FCM 둘 다 커스텀 키로 실린다).
     /// 앱은 못 알아보는 값이면 그냥 앱을 열기만 하므로, 새 종류를 늘려도 구버전이 깨지지 않는다.
     /// 계측(`push_opened{type}`)도 같은 값을 쓴다 — 안 실으면 전량 `unknown`으로 뭉친다.
-    record Alert(Line title, Line body, String type) { }
+    ///
+    /// `pushId`는 발송 이력(`PushLog`)과 열람 이벤트를 잇는 키다. 구버전 앱은 모르는 키라 무시한다.
+    record Alert(Line title, Line body, String type, String pushId) {
+        Alert(Line title, Line body, String type) { this(title, body, type, null); }
+
+        Alert withPushId(String pushId) { return new Alert(title, body, type, pushId); }
+    }
 
     /// 내 픽에 반응이 마일스톤에 닿았음을 알린다(§10.5). 발송 여부 판정은 `PickService`가 한다.
     ///
@@ -90,8 +96,9 @@ public class PushService {
     /// ⚠️ `broadcast`의 시간대 필터를 여기 걸지 않는다. 그건 전체 발송용이고, 개별 반응 푸시에
     /// 걸면 `time_zone`이 null인 기기가 통째로 잘려 조용히 아무것도 안 간다.
     public void sendPickReaction(Long ownerId, String reactorNickname, long count) {
-        Alert alert = pickReactionAlert(reactorNickname, count);
-        PushLog record = start("pick_reaction", alert, ownerId, null, false);
+        Alert draft = pickReactionAlert(reactorNickname, count);
+        PushLog record = start("pick_reaction", draft, ownerId, null, false);
+        Alert alert = draft.withPushId(record.getPushId());
 
         List<UserDeviceToken> tokens = tokenRepository.findByUserId(ownerId);
         record.candidates(tokens.size());
@@ -135,14 +142,15 @@ public class PushService {
     /// 앞으로 나온다 — 안 넣으면 눌러도 일반 피드 첫 화면이라, 알림에서 본 곡을 못 찾는다.
     /// 비워 보내면 `notice`(그냥 앱 열기)로 친다.
     public int broadcast(String title, String body, String type, boolean force, Long userId, Integer minBuild) {
-        Alert alert = new Alert(Line.raw(title), Line.raw(body),
+        Alert draft = new Alert(Line.raw(title), Line.raw(body),
                 type == null || type.isBlank() ? "notice" : type);
+        PushLog record = start(userId == null ? "broadcast" : "test", draft, userId, minBuild, force);
+        Alert alert = draft.withPushId(record.getPushId());
 
         List<UserDeviceToken> targets = userId == null
                 ? tokenRepository.findAll()
                 : tokenRepository.findByUserId(userId);
 
-        PushLog record = start(userId == null ? "broadcast" : "test", alert, userId, minBuild, force);
         record.candidates(targets.size());
 
         List<CompletableFuture<Void>> results = new ArrayList<>();
@@ -264,6 +272,9 @@ public class PushService {
         ApnsPayloadBuilder builder = new SimpleApnsPayloadBuilder()
                 .setSound(SimpleApnsPayloadBuilder.DEFAULT_SOUND_FILENAME)
                 .addCustomProperty("type", alert.type());
+        if (alert.pushId() != null) {
+            builder.addCustomProperty("push_id", alert.pushId());
+        }
 
         if (alert.title().key() != null) {
             builder.setLocalizedAlertTitle(alert.title().key(), alert.title().args());
@@ -297,7 +308,11 @@ public class PushService {
             notification.setBody(alert.body().text());
         }
 
-        return Message.builder()
+        Message.Builder message = Message.builder();
+        if (alert.pushId() != null) {
+            message.putData("push_id", alert.pushId());
+        }
+        return message
                 .setToken(token)
                 .putData("type", alert.type())
                 .setAndroidConfig(AndroidConfig.builder().setNotification(notification.build()).build())

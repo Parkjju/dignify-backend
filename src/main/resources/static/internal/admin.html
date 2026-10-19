@@ -466,7 +466,7 @@ function loadUsers() {
 
 // 발송 이력 표의 열 이름과 마우스를 올렸을 때 보여 줄 설명.
 const LOG_COLUMNS = [
-  ['보낸 시각', '서버가 발송을 시작한 시각입니다. 이 브라우저의 시간대로 표시합니다.'],
+  ['보낸 시각', '서버가 발송을 시작한 시각입니다. 이 브라우저의 시간대로 표시합니다. 아래 줄은 이 발송의 push_id이며, 알림에 같이 실려 나갑니다. 앱이 알림을 눌러 열릴 때 이 값을 app_opened_push 이벤트에 붙여 보내므로, PostHog에서 이 발송을 눌러 연 사람을 정확히 셀 수 있습니다. 칸을 누르면 push_id가 복사됩니다.'],
   ['종류', '전체 공지, 지정 발송(userId를 지정한 공지), 반응 알림 중 하나입니다. 아래 줄은 알림에 실어 보낸 type 값이며, 앱은 이 값을 보고 알림을 눌렀을 때 열 화면을 정합니다.'],
   ['문구', '공지는 운영자가 입력한 원문을 그대로 보여 줍니다. 반응 알림은 기기가 자기 언어로 문구를 만들기 때문에, 서버가 알고 있는 키와 인자만 표시합니다.'],
   ['대상', '발송할 때 지정한 조건입니다. 전체 발송인지 특정 uid인지, 최소 빌드(MIN_BUILD)와 새벽 발송 허용(FORCE)을 지정했는지 표시합니다.'],
@@ -474,6 +474,7 @@ const LOG_COLUMNS = [
   ['제외', '후보 가운데 발송하지 않은 기기 수입니다. 앱 빌드가 MIN_BUILD보다 낮은 기기와, 기기의 현지 시각이 09~22시 밖이었던 기기를 합한 값입니다. 숫자 칸에 마우스를 올리면 사유별 수가 나옵니다.'],
   ['시도', 'APNs(iOS)나 FCM(Android)에 실제로 발송을 요청한 기기 수입니다. 후보에서 제외를 뺀 값과 같습니다.'],
   ['수락 (iOS/AOS)', 'APNs와 FCM이 알림을 받아 간 수이며, 괄호 안에는 iOS와 Android의 수를 순서대로 표시합니다. 기기에 알림이 표시되었는지는 서버가 알 수 없으므로, 수락했다고 해서 알림이 기기에 도달했다는 뜻은 아닙니다.'],
+  ['수락률', '시도한 기기 가운데 APNs와 FCM이 알림을 받아 간 비율입니다. 이 비율이 갑자기 떨어지면 토큰이 대량으로 무효가 되었거나, 인증 키나 인증서에 문제가 생겼을 가능성이 큽니다.'],
   ['실패', 'APNs나 FCM이 알림을 거절했거나, 응답을 받기 전에 연결이 끊긴 수입니다. 숫자를 누르면 실패 사유별 수와 실패한 기기 목록을 최대 20대까지 볼 수 있습니다.'],
   ['무효 토큰', '실패한 기기 가운데, 앱이 삭제되었거나 토큰이 바뀌어서 더 이상 사용할 수 없는 토큰의 수입니다. 서버가 응답을 받은 즉시 이 토큰을 지웠으므로, 다음 발송부터는 대상에서 빠집니다.'],
   ['대기', '발송을 요청했지만 20초 안에 응답을 받지 못한 수입니다. 이 값이 0이 아니라면 APNs나 FCM의 응답이 늦어졌다는 뜻입니다. 반응 알림은 모든 응답을 받은 뒤에 기록하므로 항상 0입니다.'],
@@ -481,6 +482,12 @@ const LOG_COLUMNS = [
 ];
 
 const KIND = { broadcast: '전체 공지', test: '지정 발송', pick_reaction: '반응 알림' };
+
+// PostHog에서 이 발송의 열람 수를 찾을 때 쓴다(09_analytics_queries.md 「발송 건별 열람률」).
+function copyPushId(id) {
+  if (!id) return toast('push_id가 없는 이력이다(기능 배포 전 발송)');
+  navigator.clipboard.writeText(id).then(() => toast('push_id 복사됨'), () => toast('복사 실패: ' + id));
+}
 
 function loadPushLogs() {
   run(async () => {
@@ -495,12 +502,13 @@ function loadPushLogs() {
         const reasons = Object.entries(l.failureReasons || {}).map(([k, n]) => `${esc(k)} ${n}`).join(', ');
         const sample = (l.failureSample || []).map(f => `token ${f.tokenId} · uid ${f.userId} · ${f.platform} · ${esc(f.reason)}`).join('<br>');
         const took = l.completedAt ? ((new Date(l.completedAt) - new Date(l.sentAt)) / 1000).toFixed(1) + '초' : '-';
-        return `<tr><td>${new Date(l.sentAt).toLocaleString()}</td>
+        const rate = l.attempted ? Math.round(accepted / l.attempted * 100) + '%' : '-';
+        return `<tr><td style="cursor:copy" onclick="copyPushId('${esc(l.pushId)}')">${new Date(l.sentAt).toLocaleString()}<br><span class="muted">${esc(l.pushId) || '-'}</span></td>
           <td>${KIND[l.kind] || esc(l.kind)}<br><span class="muted">${esc(l.type)}</span></td>
           <td><b>${esc(l.title)}</b><br><span class="muted">${esc(l.body)}</span></td>
           <td>${cond}</td><td>${l.candidates}</td>
           <td title="빌드 미달 ${l.skippedBuild}대 · 현지 새벽 ${l.skippedQuiet}대">${l.skippedBuild + l.skippedQuiet}</td>
-          <td>${l.attempted}</td><td>${accepted} (${l.acceptedIos}/${l.acceptedAndroid})</td>
+          <td>${l.attempted}</td><td>${accepted} (${l.acceptedIos}/${l.acceptedAndroid})</td><td>${rate}</td>
           <td>${l.failed ? `<details><summary style="color:var(--bar-empty)">${l.failed}</summary><span class="muted">${reasons}<br>${sample}</span></details>` : 0}</td>
           <td>${l.invalidated}</td><td>${pending ? `<b style="color:var(--bar-empty)">${pending}</b>` : 0}</td><td>${took}</td></tr>`;
       }).join('')}</table>`;

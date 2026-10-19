@@ -93,6 +93,15 @@ class PushServiceTest {
     }
 
     @Test
+    @DisplayName("APNs 페이로드 — push_id가 있을 때만 실린다 (열람 이벤트와 발송 이력을 잇는 키)")
+    void apnsPayloadCarriesPushId() {
+        PushService.Alert alert = new PushService.Alert(PushService.Line.raw("제목"), PushService.Line.raw("본문"), "notice");
+
+        assertThat(PushService.apnsPayload(alert)).doesNotContain("push_id");
+        assertThat(PushService.apnsPayload(alert.withPushId("abc-123"))).contains("\"push_id\":\"abc-123\"");
+    }
+
+    @Test
     @DisplayName("타임존이 없거나 이상하면 UTC로 친다 — 발송이 죽지 않는다")
     void fallsBackToUtc() {
         // 04:00Z는 UTC 기준 새벽이라 건너뛰는 쪽
