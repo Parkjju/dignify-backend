@@ -12,7 +12,9 @@ import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.FirebaseMessagingException;
 import com.google.firebase.messaging.Message;
 import com.google.firebase.messaging.MessagingErrorCode;
+import com.rta.dignify.domain.PushLog;
 import com.rta.dignify.domain.UserDeviceToken;
+import com.rta.dignify.repository.PushLogRepository;
 import com.rta.dignify.repository.UserDeviceTokenRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +27,12 @@ import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 // apns.enabled=true(프로덕션)일 때만 로드. 테스트/로컬엔 APNs 키가 없어 빈을 안 띄운다.
 @ConditionalOnProperty(name = "apns.enabled", havingValue = "true")
@@ -35,6 +42,10 @@ import java.util.List;
 public class PushService {
     /// 발송 허용 시간대(기기 로컬 기준). 밖이면 건너뛴다.
     static final int AWAKE_FROM = 9, AWAKE_UNTIL = 22;
+    /// 발송 이력을 몇 건까지 남길지. 어드민 화면이 이만큼을 보여준다.
+    public static final int LOG_KEEP = 100;
+    /// 공지 발송이 APNs/FCM 응답을 기다리는 한도. 넘기면 받은 데까지만 기록하고 돌아간다.
+    private static final long RESULT_WAIT_SECONDS = 20;
 
     private final ApnsClient sandboxApns;
     private final ApnsClient productionApns;
@@ -42,6 +53,7 @@ public class PushService {
     /// 그대로 나간다 — 그래서 필수 의존이 아니라 ObjectProvider다.
     private final ObjectProvider<FirebaseMessaging> fcm;
     private final UserDeviceTokenRepository tokenRepository;
+    private final PushLogRepository pushLogRepository;
 
     @Value("${apns.bundle-id}") String bundleId;
 
@@ -79,10 +91,14 @@ public class PushService {
     /// 걸면 `time_zone`이 null인 기기가 통째로 잘려 조용히 아무것도 안 간다.
     public void sendPickReaction(Long ownerId, String reactorNickname, long count) {
         Alert alert = pickReactionAlert(reactorNickname, count);
+        PushLog record = start("pick_reaction", alert, ownerId, null, false);
 
-        for (UserDeviceToken t : tokenRepository.findByUserId(ownerId)) {
-            send(t, alert);
-        }
+        List<UserDeviceToken> tokens = tokenRepository.findByUserId(ownerId);
+        record.candidates(tokens.size());
+        // 유저 요청 안에서 불리므로 응답을 기다리지 않는다. 기록은 마지막 응답이 온 콜백에서 한다.
+        // ponytail: 요청이 끝난 뒤라 Cloud Run이 CPU를 줄여 늦게 찍힐 수 있다. 저장 한 번이라 버틴다.
+        CompletableFuture.allOf(tokens.stream().map(t -> send(t, alert, record)).toArray(CompletableFuture[]::new))
+                .whenComplete((v, err) -> save(record));
     }
 
     /// 1명일 때만 이름을 댄다. 여럿일 때 한 명을 대는 건 나머지를 지운다.
@@ -126,33 +142,78 @@ public class PushService {
                 ? tokenRepository.findAll()
                 : tokenRepository.findByUserId(userId);
 
-        int sent = 0;
+        PushLog record = start(userId == null ? "broadcast" : "test", alert, userId, minBuild, force);
+        record.candidates(targets.size());
+
+        List<CompletableFuture<Void>> results = new ArrayList<>();
         for (UserDeviceToken t : targets) {
-            if (!meetsMinBuild(t.getAppBuild(), minBuild)) continue;
-            if (userId == null && !force && !isAwakeHour(t.getTimeZone(), Instant.now())) continue;
-            send(t, alert);
-            sent++;
+            if (!meetsMinBuild(t.getAppBuild(), minBuild)) { record.skippedBuild(); continue; }
+            if (userId == null && !force && !isAwakeHour(t.getTimeZone(), Instant.now())) { record.skippedQuiet(); continue; }
+            results.add(send(t, alert, record));
         }
-        return sent;
+
+        // 응답을 이 요청 안에서 기다린다. 요청이 끝나면 Cloud Run이 CPU를 거둬 콜백이 기어가고,
+        // 어드민이 발송 직후 이력을 열었을 때 결과가 비어 있게 된다.
+        try {
+            CompletableFuture.allOf(results.toArray(CompletableFuture[]::new)).get(RESULT_WAIT_SECONDS, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            log.warn("푸시 응답 대기 한도 초과 — 받은 데까지만 기록한다");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException e) {
+            // send가 돌려주는 future는 실패로 끝나지 않는다. 혹시 오면 받은 데까지 기록한다.
+        }
+        save(record);
+        return results.size();
+    }
+
+    private static PushLog start(String kind, Alert alert, Long userId, Integer minBuild, boolean force) {
+        return PushLog.start(kind, alert.type(), describe(alert.title()), describe(alert.body()), userId, minBuild, force);
+    }
+
+    /// 이력 표시용. loc-key는 기기가 렌더하므로 서버가 아는 건 키와 인자뿐이다.
+    static String describe(Line line) {
+        if (line.key() == null) return line.text();
+        return line.arg() == null ? line.key() : line.key() + "(" + line.arg() + ")";
+    }
+
+    /// 발송 기록이 실패해도 발송 자체엔 영향이 없어야 한다 — 이미 나간 뒤다.
+    private void save(PushLog record) {
+        if (record.pending() == 0) record.completed();
+        try {
+            pushLogRepository.save(record);
+            pushLogRepository.trim(LOG_KEEP);
+        } catch (RuntimeException e) {
+            log.warn("푸시 발송 기록 저장 실패", e);
+        }
     }
 
     /// 토큰 하나에 발송. 어느 경로로 갈지는 토큰이 안다(`isAndroid`).
-    private void send(UserDeviceToken t, Alert alert) {
-        if (t.isAndroid()) {
-            sendFcm(t, alert);
-        } else {
-            sendApns(t, alert);
-        }
+    /// 돌려주는 future는 응답(성공·실패 모두)이 record에 기록된 뒤 정상 완료된다.
+    private CompletableFuture<Void> send(UserDeviceToken t, Alert alert, PushLog record) {
+        record.attempted();
+        return t.isAndroid() ? sendFcm(t, alert, record) : sendApns(t, alert, record);
     }
 
     /// APNs 발송. 만료 토큰이라고 답하면 그 자리에서 지운다.
-    private void sendApns(UserDeviceToken t, Alert alert) {
+    private CompletableFuture<Void> sendApns(UserDeviceToken t, Alert alert, PushLog record) {
         ApnsClient client = "production".equals(t.getEnvironment()) ? productionApns : sandboxApns;
         var push = new SimpleApnsPushNotification(t.getToken(), bundleId, apnsPayload(alert));
-        client.sendNotification(push).whenComplete((res, err) -> {
-            if (err == null && !res.isAccepted() && res.getTokenInvalidationTimestamp().isPresent()) {
-                tokenRepository.deleteById(t.getId());   // deleteById 자체가 트랜잭션
+        return client.sendNotification(push).handle((res, err) -> {
+            if (err != null) {
+                // 연결 실패 등 APNs가 답을 못 준 경우. 토큰 문제가 아니라 지우지 않는다.
+                log.warn("APNs 발송 실패 tokenId={}", t.getId(), err);
+                record.failed(t.getId(), t.getUser().getId(), false, err.getClass().getSimpleName(), false);
+            } else if (res.isAccepted()) {
+                record.accepted(false);
+            } else {
+                boolean invalid = res.getTokenInvalidationTimestamp().isPresent();
+                record.failed(t.getId(), t.getUser().getId(), false, res.getRejectionReason().orElse("unknown"), invalid);
+                if (invalid) {
+                    tokenRepository.deleteById(t.getId());   // deleteById 자체가 트랜잭션
+                }
             }
+            return null;
         });
     }
 
@@ -161,19 +222,23 @@ public class PushService {
     ///
     /// UNREGISTERED는 앱이 지워졌거나 토큰이 회전된 경우로, APNs의 만료 토큰과 같은 자리라 지운다.
     /// 그 외 실패(일시적 네트워크·쿼터)는 두고 다음 발송에서 다시 시도한다.
-    private void sendFcm(UserDeviceToken t, Alert alert) {
+    private CompletableFuture<Void> sendFcm(UserDeviceToken t, Alert alert, PushLog record) {
         FirebaseMessaging messaging = fcm.getIfAvailable();
         if (messaging == null) {
             // 여기서 조용히 빠지면 "보냈다고 나오는데 안 온다"가 된다. broadcast는 이걸 발송
-            // 대수에 세고 있어서 호출부에서도 구별이 안 간다.
+            // 대수에 세고 있어서 호출부에서도 구별이 안 간다 — 그래서 이력엔 실패로 남긴다.
             log.warn("FCM 미설정(fcm.enabled=false)이라 안드로이드 기기 {}를 건너뛴다", t.getId());
-            return;
+            record.failed(t.getId(), t.getUser().getId(), true, "FCM_DISABLED", false);
+            return CompletableFuture.completedFuture(null);
         }
 
+        CompletableFuture<Void> done = new CompletableFuture<>();
         ApiFutures.addCallback(messaging.sendAsync(fcmMessage(t.getToken(), alert)),
                 new ApiFutureCallback<String>() {
                     @Override public void onSuccess(String messageId) {
                         log.info("FCM 발송 성공 tokenId={} messageId={}", t.getId(), messageId);
+                        record.accepted(true);
+                        done.complete(null);
                     }
 
                     @Override public void onFailure(Throwable err) {
@@ -182,11 +247,17 @@ public class PushService {
                         // 남은 것 전부를 남긴다. FCM 실패는 유저 요청 밖(콜백)에서 나므로
                         // 여기서 안 찍으면 어디에도 흔적이 없다.
                         log.warn("FCM 발송 실패 tokenId={} code={}", t.getId(), code, err);
-                        if (code == MessagingErrorCode.UNREGISTERED) {
+                        boolean invalid = code == MessagingErrorCode.UNREGISTERED;
+                        record.failed(t.getId(), t.getUser().getId(), true,
+                                code != null ? code.name() : err.getClass().getSimpleName(), invalid);
+                        // 삭제보다 먼저 끝낸다. 삭제가 터지면 broadcast가 대기 한도까지 묶인다.
+                        done.complete(null);
+                        if (invalid) {
                             tokenRepository.deleteById(t.getId());
                         }
                     }
                 }, Runnable::run);
+        return done;
     }
 
     static String apnsPayload(Alert alert) {

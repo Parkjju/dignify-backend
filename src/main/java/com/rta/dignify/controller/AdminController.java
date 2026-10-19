@@ -1,5 +1,6 @@
 package com.rta.dignify.controller;
 
+import com.rta.dignify.domain.PushLog;
 import com.rta.dignify.dto.admin.ArtistIdBatch;
 import com.rta.dignify.dto.admin.ArtistRequestItem;
 import com.rta.dignify.dto.admin.GenreStat;
@@ -91,6 +92,13 @@ public class AdminController {
     public PushTargets getPushTargets(@RequestHeader("X-Cron-Secret") String secret) {
         internalSecrets.verifyAdmin(secret);
         return adminService.getPushTargets();
+    }
+
+    /// 최근 발송 이력. 새 것부터.
+    @GetMapping("/push/logs")
+    public List<PushLog> getPushLogs(@RequestHeader("X-Cron-Secret") String secret) {
+        internalSecrets.verifyAdmin(secret);
+        return adminService.getPushLogs();
     }
 
     @GetMapping("/seed-picks")

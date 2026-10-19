@@ -2,6 +2,7 @@ package com.rta.dignify.service;
 
 import com.rta.dignify.client.itunes.ITunesAPIClient;
 import com.rta.dignify.domain.CurationTrack;
+import com.rta.dignify.domain.PushLog;
 import com.rta.dignify.domain.RequestStatus;
 import com.rta.dignify.domain.Track;
 import com.rta.dignify.domain.UserDeviceToken;
@@ -17,6 +18,7 @@ import com.rta.dignify.global.exception.BusinessException;
 import com.rta.dignify.global.exception.ErrorCode;
 import com.rta.dignify.repository.ArtistRequestRepository;
 import com.rta.dignify.repository.CurationTrackRepository;
+import com.rta.dignify.repository.PushLogRepository;
 import com.rta.dignify.repository.TrackRepository;
 import com.rta.dignify.repository.UserDeviceTokenRepository;
 import com.rta.dignify.service.cron.ArtistIdBackfillService;
@@ -42,6 +44,7 @@ public class AdminService {
     private final TrackRepository trackRepository;
     private final ArtistRequestRepository artistRequestRepository;
     private final UserDeviceTokenRepository userDeviceTokenRepository;
+    private final PushLogRepository pushLogRepository;
     private final ITunesAPIClient iTunesAPIClient;
     private final KoEnrichmentBatchService koEnrichmentBatchService;
     private final ArtistIdBackfillService artistIdBackfillService;
@@ -174,5 +177,10 @@ public class AdminService {
                 .toList();
 
         return new PushTargets(users, builds);
+    }
+
+    @Transactional(readOnly = true)
+    public List<PushLog> getPushLogs() {
+        return pushLogRepository.findTop100ByOrderByIdDesc();
     }
 }

@@ -3,6 +3,8 @@ package com.rta.dignify.service;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.rta.dignify.domain.PushLog;
+
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -98,5 +100,31 @@ class PushServiceTest {
         assertThat(PushService.isAwakeHour("Mars/Olympus", NOON_IN_SEOUL)).isFalse();
         // 12:00Z는 UTC 기준 낮이라 보내는 쪽
         assertThat(PushService.isAwakeHour("", Instant.parse("2026-07-28T12:00:00Z"))).isTrue();
+    }
+
+    @Test
+    @DisplayName("발송 이력 — 플랫폼별 수락·사유별 실패·대기를 따로 센다")
+    void pushLogTallies() {
+        PushLog log = PushLog.start("broadcast", "notice", "t", "b", null, null, false);
+        for (int i = 0; i < 25; i++) log.attempted();
+        log.accepted(false);
+        log.accepted(true);
+        for (long i = 0; i < 22; i++) log.failed(i, 1L, false, "BadDeviceToken", true);
+
+        assertThat(log.getAcceptedIos()).isEqualTo(1);
+        assertThat(log.getAcceptedAndroid()).isEqualTo(1);
+        assertThat(log.getFailureReasons()).containsEntry("ios:BadDeviceToken", 22);
+        assertThat(log.getInvalidated()).isEqualTo(22);
+        // 실패 기기 목록은 앞의 20개만 남는다 — 행 크기가 유저 수에 비례하지 않게.
+        assertThat(log.getFailureSample()).hasSize(20);
+        assertThat(log.pending()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("발송 이력 문구 — loc-key는 키와 인자로 남긴다")
+    void describeLine() {
+        assertThat(PushService.describe(PushService.Line.raw("공지"))).isEqualTo("공지");
+        assertThat(PushService.describe(PushService.Line.loc("push_x", "kim"))).isEqualTo("push_x(kim)");
+        assertThat(PushService.describe(PushService.Line.loc("push_y"))).isEqualTo("push_y");
     }
 }
