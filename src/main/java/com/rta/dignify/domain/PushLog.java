@@ -99,6 +99,15 @@ public class PushLog {
     @ColumnDefault("0")
     private int opened;
 
+    /// 열람 중 OS를 가른 몫. User-Agent로 가르므로 UA를 못 알아본 열람(curl 등)은 `opened`에만 들어간다.
+    @ColumnDefault("0")
+    @Column(name = "opened_ios")
+    private int openedIos;
+
+    @ColumnDefault("0")
+    @Column(name = "opened_android")
+    private int openedAndroid;
+
     /// "ios:BadDeviceToken" → 3 처럼 플랫폼:사유별 실패 수.
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "failure_reasons")

@@ -37,14 +37,18 @@ class PushLogRepositoryTest {
     }
 
     @Test
-    @DisplayName("열람은 그 push_id 행에만 1씩 쌓이고, 없는 push_id는 아무것도 안 바꾼다")
+    @DisplayName("열람은 그 push_id 행에만 1씩 쌓이고 OS별 몫도 따로 쌓인다. 없는 push_id는 아무것도 안 바꾼다")
     void markOpened() {
         PushLog log = pushLogRepository.saveAndFlush(PushLog.start("test", "notice", "t", "b", 1L, null, false));
 
-        assertThat(pushLogRepository.markOpened(log.getPushId())).isEqualTo(1);
-        assertThat(pushLogRepository.markOpened(log.getPushId())).isEqualTo(1);
-        assertThat(pushLogRepository.markOpened("no-such-id")).isZero();
+        assertThat(pushLogRepository.markOpened(log.getPushId(), 1, 0)).isEqualTo(1);
+        assertThat(pushLogRepository.markOpened(log.getPushId(), 0, 1)).isEqualTo(1);
+        assertThat(pushLogRepository.markOpened(log.getPushId(), 0, 0)).isEqualTo(1);
+        assertThat(pushLogRepository.markOpened("no-such-id", 1, 0)).isZero();
 
-        assertThat(pushLogRepository.findById(log.getId()).orElseThrow().getOpened()).isEqualTo(2);
+        PushLog saved = pushLogRepository.findById(log.getId()).orElseThrow();
+        assertThat(saved.getOpened()).isEqualTo(3);
+        assertThat(saved.getOpenedIos()).isEqualTo(1);
+        assertThat(saved.getOpenedAndroid()).isEqualTo(1);
     }
 }

@@ -11,11 +11,14 @@ import java.util.List;
 public interface PushLogRepository extends JpaRepository<PushLog, Long> {
     List<PushLog> findTop100ByOrderByIdDesc();
 
-    /// 앱이 알린 열람 1건. 없는 push_id(정리됐거나 엉뚱한 값)면 0행이 바뀌고 끝난다.
+    /// 앱이 알린 열람 1건. ios/android는 그 OS면 1, 아니면 0. 없는 push_id(정리됐거나 엉뚱한 값)면 0행이 바뀌고 끝난다.
     @Modifying(clearAutomatically = true)
     @Transactional
-    @Query("UPDATE PushLog p SET p.opened = p.opened + 1 WHERE p.pushId = :pushId")
-    int markOpened(String pushId);
+    @Query("""
+            UPDATE PushLog p SET p.opened = p.opened + 1,
+                p.openedIos = p.openedIos + :ios, p.openedAndroid = p.openedAndroid + :android
+            WHERE p.pushId = :pushId""")
+    int markOpened(String pushId, int ios, int android);
 
     /// 최근 keep건만 남긴다. 발송할 때마다 불러 테이블 크기를 고정한다.
     @Modifying
