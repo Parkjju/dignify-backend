@@ -142,7 +142,7 @@
   <!-- 발송 이력 -->
   <section id="pushlog">
     <h2>발송 이력 <button onclick="loadPushLogs()" style="margin-left:8px">새로고침</button></h2>
-    <p class="muted">수락은 APNs·FCM이 알림을 받아 갔다는 뜻이고, 기기에 떴는지는 서버가 알 수 없다. 알림을 눌러 앱을 연 수는 PostHog <code>app_opened_push{type}</code>에서 본다.<br>
+    <p class="muted">수락은 APNs·FCM이 알림을 받아 갔다는 뜻이고, 기기에 떴는지는 서버가 알 수 없다. 알림을 누른 수는 앱이 서버에 직접 알려 온 값으로 <b>열람</b> 열에 나온다(그 기능이 들어간 앱 빌드부터).<br>
       무효 토큰은 앱이 지워진 기기라 그 자리에서 지웠다. 대기는 응답을 20초 안에 못 받은 수다. 최근 100건만 남는다.</p>
     <div id="pushLogs"></div>
   </section>
@@ -480,6 +480,8 @@ const LOG_COLUMNS = [
   ['시도', 'APNs(iOS)나 FCM(Android)에 실제로 발송을 요청한 기기 수입니다. 후보에서 제외를 뺀 값과 같습니다.'],
   ['수락 (iOS/AOS)', 'APNs와 FCM이 알림을 받아 간 수이며, 괄호 안에는 iOS와 Android의 수를 순서대로 표시합니다. 기기에 알림이 표시되었는지는 서버가 알 수 없으므로, 수락했다고 해서 알림이 기기에 도달했다는 뜻은 아닙니다.'],
   ['수락률', '시도한 기기 가운데 APNs와 FCM이 알림을 받아 간 비율입니다. 이 비율이 갑자기 떨어지면 토큰이 대량으로 무효가 되었거나, 인증 키나 인증서에 문제가 생겼을 가능성이 큽니다.'],
+  ['열람', '알림을 누른 횟수입니다. 앱이 알림을 누른 순간 서버에 직접 알려 온 값이며, 앱을 보던 중에 누른 배너도 셉니다. 이 기능이 들어간 앱 빌드에서 누른 것만 잡히므로, 구버전 앱을 쓰는 유저가 남아 있는 동안에는 실제보다 적게 나옵니다.'],
+  ['열람률', '수락된 알림 가운데 유저가 누른 비율입니다(열람 ÷ 수락). 알림 문구와 발송 시각이 얼마나 효과가 있었는지 비교할 때 봅니다.'],
   ['실패', 'APNs나 FCM이 알림을 거절했거나, 응답을 받기 전에 연결이 끊긴 수입니다. 숫자를 누르면 실패 사유별 수와 실패한 기기 목록을 최대 20대까지 볼 수 있습니다.'],
   ['무효 토큰', '실패한 기기 가운데, 앱이 삭제되었거나 토큰이 바뀌어서 더 이상 사용할 수 없는 토큰의 수입니다. 서버가 응답을 받은 즉시 이 토큰을 지웠으므로, 다음 발송부터는 대상에서 빠집니다.'],
   ['대기', '발송을 요청했지만 20초 안에 응답을 받지 못한 수입니다. 이 값이 0이 아니라면 APNs나 FCM의 응답이 늦어졌다는 뜻입니다. 반응 알림은 모든 응답을 받은 뒤에 기록하므로 항상 0입니다.'],
@@ -508,12 +510,13 @@ function loadPushLogs() {
         const sample = (l.failureSample || []).map(f => `token ${f.tokenId} · uid ${f.userId} · ${f.platform} · ${esc(f.reason)}`).join('<br>');
         const took = l.completedAt ? ((new Date(l.completedAt) - new Date(l.sentAt)) / 1000).toFixed(1) + '초' : '-';
         const rate = l.attempted ? Math.round(accepted / l.attempted * 100) + '%' : '-';
+        const openRate = accepted ? Math.round(l.opened / accepted * 100) + '%' : '-';
         return `<tr><td style="cursor:copy" onclick="copyPushId('${esc(l.pushId)}')">${new Date(l.sentAt).toLocaleString()}<br><span class="muted">${esc(l.pushId) || '-'}</span></td>
           <td>${KIND[l.kind] || esc(l.kind)}<br><span class="muted">${esc(l.type)}</span></td>
           <td><b>${esc(l.title)}</b><br><span class="muted">${esc(l.body)}</span></td>
           <td>${cond}</td><td>${l.candidates}</td>
           <td title="빌드 미달 ${l.skippedBuild}대 · 현지 새벽 ${l.skippedQuiet}대">${l.skippedBuild + l.skippedQuiet}</td>
-          <td>${l.attempted}</td><td>${accepted} (${l.acceptedIos}/${l.acceptedAndroid})</td><td>${rate}</td>
+          <td>${l.attempted}</td><td>${accepted} (${l.acceptedIos}/${l.acceptedAndroid})</td><td>${rate}</td><td>${l.opened}</td><td>${openRate}</td>
           <td>${l.failed ? `<details><summary style="color:var(--bar-empty)">${l.failed}</summary><span class="muted">${reasons}<br>${sample}</span></details>` : 0}</td>
           <td>${l.invalidated}</td><td>${pending ? `<b style="color:var(--bar-empty)">${pending}</b>` : 0}</td><td>${took}</td></tr>`;
       }).join('')}</table>`;

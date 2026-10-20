@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnDefault;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -91,6 +92,12 @@ public class PushLog {
 
     /// 만료 응답을 받아 그 자리에서 지운 토큰 수. 실패에 포함된다.
     private int invalidated;
+
+    /// 알림을 눌렀다고 앱이 알려 온 수(`POST /push/{pushId}/opened`). 앱을 보던 중 누른 배너도 센다.
+    /// 그 기능이 들어간 앱 빌드에서 누른 것만 잡히므로, 구버전이 남아 있는 동안은 실제보다 적다.
+    /// `@ColumnDefault`는 이미 행이 있는 테이블에 NOT NULL 컬럼을 붙이려면 필요하다.
+    @ColumnDefault("0")
+    private int opened;
 
     /// "ios:BadDeviceToken" → 3 처럼 플랫폼:사유별 실패 수.
     @JdbcTypeCode(SqlTypes.JSON)

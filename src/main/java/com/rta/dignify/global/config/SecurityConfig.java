@@ -40,6 +40,8 @@ public class SecurityConfig {
                     // 토큰 검증 실패처럼 보인다(구글 로그인 추가하며 실제로 밟았다).
                     .requestMatchers("/auth/apple", "/auth/google", "/auth/refresh", "/internal/**", "/feed", "/feed/**").permitAll()
                     .requestMatchers(HttpMethod.GET, "/picks", "/picks/*").permitAll()
+                    // 콜드 스타트 직후엔 토큰 갱신 전이라 인증을 걸면 열람이 401로 빠진다.
+                    .requestMatchers(HttpMethod.POST, "/push/*/opened").permitAll()
                     .anyRequest().authenticated())
             .exceptionHandling(exception -> exception.authenticationEntryPoint(authenticationEntryPoint))
             .addFilterBefore(new JwtAuthenticationFilter(jwtProvider, authenticationEntryPoint), UsernamePasswordAuthenticationFilter.class);

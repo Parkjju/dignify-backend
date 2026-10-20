@@ -35,4 +35,16 @@ class PushLogRepositoryTest {
         assertThat(left.get(0).getFailureReasons()).containsEntry("ios:BadDeviceToken", 1);
         assertThat(left.get(0).getFailureSample()).hasSize(1);
     }
+
+    @Test
+    @DisplayName("열람은 그 push_id 행에만 1씩 쌓이고, 없는 push_id는 아무것도 안 바꾼다")
+    void markOpened() {
+        PushLog log = pushLogRepository.saveAndFlush(PushLog.start("test", "notice", "t", "b", 1L, null, false));
+
+        assertThat(pushLogRepository.markOpened(log.getPushId())).isEqualTo(1);
+        assertThat(pushLogRepository.markOpened(log.getPushId())).isEqualTo(1);
+        assertThat(pushLogRepository.markOpened("no-such-id")).isZero();
+
+        assertThat(pushLogRepository.findById(log.getId()).orElseThrow().getOpened()).isEqualTo(2);
+    }
 }
