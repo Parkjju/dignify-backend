@@ -1,6 +1,7 @@
 package com.rta.dignify.controller;
 
 import com.rta.dignify.dto.DeviceTokenRegister;
+import com.rta.dignify.dto.hype.HypeGenresResponse;
 import com.rta.dignify.dto.hype.HypeListResponse;
 import com.rta.dignify.dto.stats.UserStatsResponse;
 import com.rta.dignify.dto.user.DiggingModeUpdateRequest;
@@ -29,8 +30,13 @@ public class UserController {
     private final StatsService statsService;
 
     @GetMapping("/me/hypes")
-    public HypeListResponse getMyHypedTracks(@AuthenticationPrincipal Long userId, @RequestParam(required = false) Long cursor) {
-        return hypeService.getMyHypedTracks(userId, cursor);
+    public HypeListResponse getMyHypedTracks(@AuthenticationPrincipal Long userId, @RequestParam(required = false) Long cursor, @RequestParam(required = false) Long genreId) {
+        return hypeService.getMyHypedTracks(userId, cursor, genreId);
+    }
+
+    @GetMapping("/me/hypes/genres")
+    public HypeGenresResponse getMyHypeGenres(@AuthenticationPrincipal Long userId) {
+        return hypeService.getMyHypeGenres(userId);
     }
 
     @GetMapping("/me")

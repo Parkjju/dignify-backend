@@ -1,6 +1,7 @@
 package com.rta.dignify.repository;
 
 import com.rta.dignify.domain.UserHypeTrack;
+import com.rta.dignify.dto.hype.HypeGenreCount;
 import com.rta.dignify.dto.stats.ArtistCount;
 import com.rta.dignify.dto.stats.GenreCount;
 import org.springframework.data.domain.Pageable;
@@ -23,17 +24,36 @@ public interface UserHypeTrackRepository extends JpaRepository<UserHypeTrack, Lo
      *
      * @param userId 유저 아이디
      * @param cursor 마지막에 fetch한 UserHypeTrack 리스트의 Last ID값
+     * @param genreId 이 장르만. null이면 전체
      * @param pageable 페이지네이션 객체
      * @return 유저 하입 트랙 리스트
      */
     @Query(value = "SELECT uht FROM UserHypeTrack uht " +
-            "JOIN FETCH uht.track " +
+            "JOIN FETCH uht.track t " +
+            "JOIN FETCH t.genre " +
             "WHERE uht.user.id = :userId " +
             "AND (:cursor IS NULL OR uht.id < :cursor) " +
+            "AND (:genreId IS NULL OR t.genre.id = :genreId) " +
             "ORDER BY uht.id DESC"
 
     )
-    List<UserHypeTrack> findUserHypeTracksByUserId(@Param("userId") Long userId, @Param("cursor") Long cursor, Pageable pageable);
+    List<UserHypeTrack> findUserHypeTracksByUserId(@Param("userId") Long userId, @Param("cursor") Long cursor, @Param("genreId") Long genreId, Pageable pageable);
+
+    /// 좋아요 목록의 장르 칩. 이 유저가 하입한 장르만, 많은 순.
+    @Query(value = """
+    SELECT new com.rta.dignify.dto.hype.HypeGenreCount(
+        g.id,
+        CASE WHEN :ko = TRUE THEN g.genreNameKo ELSE g.genreNameEn END,
+        COUNT(uht)
+    )
+    FROM UserHypeTrack uht
+    JOIN uht.track t
+    JOIN t.genre g
+    WHERE uht.user.id = :userId
+    GROUP BY g.id, g.genreNameEn, g.genreNameKo
+    ORDER BY COUNT(uht) DESC, g.genreNameEn ASC
+    """)
+    List<HypeGenreCount> countMyHypesByGenre(@Param("userId") Long userId, @Param("ko") boolean ko);
 
     @Query(value = "SELECT uht FROM UserHypeTrack uht " +
             "JOIN FETCH uht.user " +

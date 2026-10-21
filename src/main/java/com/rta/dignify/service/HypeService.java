@@ -3,6 +3,8 @@ package com.rta.dignify.service;
 import com.rta.dignify.domain.Track;
 import com.rta.dignify.domain.User;
 import com.rta.dignify.domain.UserHypeTrack;
+import com.rta.dignify.dto.hype.HypeGenreCount;
+import com.rta.dignify.dto.hype.HypeGenresResponse;
 import com.rta.dignify.dto.hype.HypeItem;
 import com.rta.dignify.dto.hype.HypeListResponse;
 import com.rta.dignify.dto.track.TrackDetailResponse;
@@ -12,6 +14,7 @@ import com.rta.dignify.repository.TrackRepository;
 import com.rta.dignify.repository.UserHypeTrackRepository;
 import com.rta.dignify.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,8 +50,8 @@ public class HypeService {
     }
 
     @Transactional
-    public HypeListResponse getMyHypedTracks(Long userId, Long cursor) {
-        List<UserHypeTrack> userHypeTrackList = userHypeTrackRepository.findUserHypeTracksByUserId(userId, cursor, PageRequest.of(0, PAGE_SIZE));
+    public HypeListResponse getMyHypedTracks(Long userId, Long cursor, Long genreId) {
+        List<UserHypeTrack> userHypeTrackList = userHypeTrackRepository.findUserHypeTracksByUserId(userId, cursor, genreId, PageRequest.of(0, PAGE_SIZE));
         HypeListResponse hypeListResponse;
         List<HypeItem> hypeItems = userHypeTrackList.stream().map(HypeItem::from).toList();
         if (userHypeTrackList.size() < PAGE_SIZE) {
@@ -57,6 +60,13 @@ public class HypeService {
             hypeListResponse = new HypeListResponse(hypeItems, hypeItems.getLast().userHypeTrackId());
         }
         return hypeListResponse;
+    }
+
+    @Transactional(readOnly = true)
+    public HypeGenresResponse getMyHypeGenres(Long userId) {
+        boolean ko = "ko".equals(LocaleContextHolder.getLocale().getLanguage());
+        List<HypeGenreCount> genres = userHypeTrackRepository.countMyHypesByGenre(userId, ko);
+        return new HypeGenresResponse(genres.stream().mapToLong(HypeGenreCount::count).sum(), genres);
     }
 
     @Transactional(readOnly = true)

@@ -82,13 +82,13 @@ public class UserHypeRepositoryTest {
             entityManager.persistAndFlush(userhypeTrack);
         }
 
-        List<UserHypeTrack> firstPage = userHypeTrackRepository.findUserHypeTracksByUserId(user.getId(), null, PageRequest.of(0, 10));
+        List<UserHypeTrack> firstPage = userHypeTrackRepository.findUserHypeTracksByUserId(user.getId(), null, null, PageRequest.of(0, 10));
         assertThat(firstPage).extracting((uht) -> uht.getTrack().getId()).containsExactlyElementsOf(testTrackList.subList(testTrackList.size() - 10, testTrackList.size()).stream().map(Track::getId).toList().reversed());
 
-        List<UserHypeTrack> secondPage = userHypeTrackRepository.findUserHypeTracksByUserId(user.getId(), firstPage.getLast().getId(), PageRequest.of(0, 10));
+        List<UserHypeTrack> secondPage = userHypeTrackRepository.findUserHypeTracksByUserId(user.getId(), firstPage.getLast().getId(), null, PageRequest.of(0, 10));
         assertThat(secondPage).extracting((uht) -> uht.getTrack().getId()).containsExactlyElementsOf(testTrackList.subList(0, testTrackList.size() - 10).stream().map(Track::getId).toList().reversed());
 
-        List<UserHypeTrack> lastPage = userHypeTrackRepository.findUserHypeTracksByUserId(user.getId(), secondPage.getLast().getId(), PageRequest.of(0, 10));
+        List<UserHypeTrack> lastPage = userHypeTrackRepository.findUserHypeTracksByUserId(user.getId(), secondPage.getLast().getId(), null, PageRequest.of(0, 10));
         assertThat(lastPage).extracting((uht) -> uht.getTrack().getId()).isEmpty();
     }
 

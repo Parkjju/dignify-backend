@@ -4,6 +4,8 @@ import com.rta.dignify.domain.Genre;
 import com.rta.dignify.domain.Track;
 import com.rta.dignify.domain.User;
 import com.rta.dignify.domain.UserHypeTrack;
+import com.rta.dignify.dto.hype.HypeGenreCount;
+import com.rta.dignify.dto.hype.HypeGenresResponse;
 import com.rta.dignify.dto.hype.HypeItem;
 import com.rta.dignify.dto.hype.HypeListResponse;
 import com.rta.dignify.dto.track.TrackDetailResponse;
@@ -96,16 +98,46 @@ public class HypeServiceTest {
             userHypeTrackRepository.save(userhypeTrack);
         }
 
-        HypeListResponse response1 = hypeService.getMyHypedTracks(user.getId(), null);
+        HypeListResponse response1 = hypeService.getMyHypedTracks(user.getId(), null, null);
         assertThat(response1.items()).extracting(HypeItem::trackId)
                 .containsExactlyElementsOf(testTrackList.stream().map(Track::getId).toList().subList(testTrackList.size() - 10, testTrackList.size()).reversed());
 
-        HypeListResponse response2 = hypeService.getMyHypedTracks(user.getId(), response1.items().getLast().userHypeTrackId());
+        HypeListResponse response2 = hypeService.getMyHypedTracks(user.getId(), response1.items().getLast().userHypeTrackId(), null);
         assertThat(response2.items()).extracting(HypeItem::trackId)
                 .containsExactlyElementsOf(testTrackList.stream().map(Track::getId).toList().subList(testTrackList.size() - 20, testTrackList.size() - 10).reversed());
 
-        HypeListResponse response3 = hypeService.getMyHypedTracks(user.getId(), response2.items().getLast().userHypeTrackId());
+        HypeListResponse response3 = hypeService.getMyHypedTracks(user.getId(), response2.items().getLast().userHypeTrackId(), null);
         assertThat(response3.items()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("좋아요 목록 장르별 수와 장르 필터 테스트")
+    void myHypeGenresAndFilterTest() {
+        Genre jazz = genreRepository.save(Genre.create("Jazz", "재즈"));
+        List<Long> jazzTrackIds = new ArrayList<>();
+        // 기본 장르 3곡, 재즈 12곡 — 재즈는 한 페이지(10)를 넘겨 커서 경계를 탄다
+        for (int i = 0; i < 15; i++) {
+            Genre g = i < 3 ? genre : jazz;
+            Track t = trackRepository.save(Track.create("g-" + i, "Artist " + i, "Album " + i, "Track " + i,
+                    "https://example.com/p" + i + ".mp3", "https://example.com/t" + i, "https://example.com/a" + i + ".jpg",
+                    Instant.now(), g, "US", "ITUNES"));
+            userHypeTrackRepository.save(UserHypeTrack.create(user, t));
+            if (g == jazz) jazzTrackIds.add(t.getId());
+        }
+
+        HypeGenresResponse genres = hypeService.getMyHypeGenres(user.getId());
+        assertThat(genres.genres()).extracting(HypeGenreCount::genreId).containsExactly(jazz.getId(), genre.getId());
+        assertThat(genres.genres()).extracting(HypeGenreCount::count).containsExactly(12L, 3L);
+        assertThat(genres.total()).isEqualTo(15L);
+
+        HypeListResponse page1 = hypeService.getMyHypedTracks(user.getId(), null, jazz.getId());
+        assertThat(page1.items()).hasSize(10).allMatch(item -> item.genreId().equals(jazz.getId()));
+        HypeListResponse page2 = hypeService.getMyHypedTracks(user.getId(), page1.nextCursor(), jazz.getId());
+        assertThat(page2.nextCursor()).isNull();
+        assertThat(java.util.stream.Stream.concat(page1.items().stream(), page2.items().stream()).map(HypeItem::trackId))
+                .containsExactlyElementsOf(jazzTrackIds.reversed());
+
+        assertThat(hypeService.getMyHypedTracks(user.getId(), null, -1L).items()).isEmpty();
     }
 
     @Test
