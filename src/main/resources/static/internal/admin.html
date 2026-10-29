@@ -49,6 +49,11 @@
   .stat .g { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .breakdown { font-size: 12px; opacity: .75; padding: 4px 0 8px 6px; line-height: 1.7; }
   .breakdown b { font-weight: 600; opacity: 1; }
+  .steps { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 2px; }
+  .steps span { padding: 1px 8px; border-radius: 10px; border: 1px solid currentColor; opacity: .45; }
+  .steps .run { opacity: 1; color: var(--bar); }
+  .steps .done { opacity: 1; }
+  .steps .fail { opacity: 1; color: var(--bar-empty); }
   #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #222; color: #fff; padding: 9px 16px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; }
   #toast.on { opacity: 1; }
 </style>
@@ -411,17 +416,51 @@ function breakdown(r) {
   return html;
 }
 
-// 카탈로그 200곡까지 훑고 저장까지 동기로 끝난다. 수십 초 걸릴 수 있어 버튼을 잠근다.
+// 수집 → 한글 보강을 한 번에 돈다. 단계마다 요청 하나라 결과가 오는 대로 단계 줄을 다시 그린다.
+// 수집은 카탈로그 200곡까지 동기로 끝나 수십 초 걸릴 수 있어 버튼을 잠근다.
+// 임베딩(무드 피드 반영)은 맥에서 ../mood-pilot/add-new-tracks.sh로 따로 돈다.
+const STEP_ICON = { wait: '○', run: '●', done: '✓', fail: '✕' };
+const steps = list => '<div class="steps">' +
+  list.map(([state, label]) => `<span class="${state}">${STEP_ICON[state]} ${label}</span>`).join('→') + '</div>';
+
 async function collect(artistId, btn) {
+  const box = $('#bd-' + artistId);
+  let detail = '';
+  const draw = (a, b) => box.innerHTML = steps([a, b]) + detail;
   btn.disabled = true;
-  btn.textContent = '수집중…';
+  btn.textContent = '처리중…';
+  draw(['run', '수집'], ['wait', '한글 보강']);
+
+  let r;
   try {
-    const r = await api('POST', '/internal/cron/collect-artist-id?artistId=' + artistId);
-    btn.textContent = r.saved + '곡 저장';
-    $('#bd-' + artistId).innerHTML = breakdown(r);
-    loadRequests();
+    r = await api('POST', '/internal/cron/collect-artist-id?artistId=' + artistId);
   } catch (e) {
+    draw(['fail', '수집 실패'], ['wait', '한글 보강']);
     toast('실패: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = '수집';
+    return;
+  }
+  detail = breakdown(r);
+  const collected = ['done', `수집 ${r.saved}곡`];
+  loadRequests();
+
+  // 이 아티스트 곡만 집는다. 190곡이 넘으면 배치가 둘 이상이라 전체 보강과 같은 간격을 쉰다.
+  let checked = 0, matched = 0;
+  try {
+    for (;;) {
+      draw(collected, ['run', `한글 보강 ${checked}곡…`]);
+      const k = await api('POST', '/internal/admin/enrich-ko/batch?artistId=' + artistId);
+      checked += k.checked;
+      matched += k.matched;
+      if (k.remaining === 0 || k.checked === 0) break;
+      await new Promise(res => setTimeout(res, KO_PAUSE_MS));
+    }
+    draw(collected, ['done', `한글 보강 ${checked}곡 중 ${matched}곡 찾음`]);
+    btn.textContent = '완료';
+  } catch (e) {
+    draw(collected, ['fail', `한글 보강 실패(${checked}곡까지 처리)`]);
+    toast('한글 보강 실패: ' + e.message + ' — 현황 탭의 [채우기 시작]으로 마저 채울 수 있다');
     btn.disabled = false;
     btn.textContent = '수집';
   }
@@ -704,6 +743,9 @@ function loadArtistIdPending() {
   run(async () => aidLine(await api('GET', '/internal/admin/artist-id-pending')));
 }
 
+// iTunes 한도(분당 약 20회) 안에서 분당 15회. 30초는 한글 보강 터미널 잡에서 옮겨 온 값이라 근거가 없었다.
+const AID_PAUSE_MS = 4000;
+
 async function backfillArtistId() {
   aidStop = false;
   $('#aidRun').style.display = 'none';
@@ -717,7 +759,7 @@ async function backfillArtistId() {
       cursor = r.cursor;
       done += r.checked;
       aidLine(r.remaining, ` — 이번에 ${done}곡 처리(id 찾음 ${r.matched})`);
-      for (let i = 0; i < KO_PAUSE_MS / 1000 && !aidStop; i++) await new Promise(r => setTimeout(r, 1000));
+      for (let i = 0; i < AID_PAUSE_MS / 1000 && !aidStop; i++) await new Promise(r => setTimeout(r, 1000));
     }
     toast(aidStop ? `중단했다 — ${done}곡까지 처리됨` : `끝났다 — ${done}곡 처리`);
   } catch (e) {

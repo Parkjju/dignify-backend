@@ -23,6 +23,16 @@ public class KoEnrichmentBatchService {
         return trackRepository.findUncheckedExternalIds(limit);
     }
 
+    @Transactional(readOnly = true)
+    public List<String> peekUncheckedExternalIds(long artistId, int limit) {
+        return trackRepository.findUncheckedExternalIdsByArtistId(artistId, limit);
+    }
+
+    @Transactional(readOnly = true)
+    public long countUnchecked(long artistId) {
+        return trackRepository.countByKoCheckedFalseAndArtistId(artistId);
+    }
+
     // 이번 실행에서 처리할 미체크 트랙 총량 (진행률 denominator).
     @Transactional(readOnly = true)
     public long countUnchecked() {

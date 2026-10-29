@@ -121,13 +121,20 @@ public class AdminService {
     /// 반복은 화면이 맡는다 — 매 호출이 정상 요청이라 스로틀링을 안 탄다.
     ///
     /// 트랜잭션을 걸지 않는다. iTunes 호출이 중간에 있고, 배치별 커밋은 안쪽 서비스가 각자 한다.
-    public KoBatch enrichKoBatch() {
-        List<String> externalIds = koEnrichmentBatchService.peekUncheckedExternalIds(LOOKUP_BATCH_SIZE);
+    ///
+    /// artistId가 있으면 그 아티스트 곡만 집고 remaining도 그 아티스트 기준이다(어드민 [수집] 직후).
+    public KoBatch enrichKoBatch(Long artistId) {
+        List<String> externalIds = artistId == null
+                ? koEnrichmentBatchService.peekUncheckedExternalIds(LOOKUP_BATCH_SIZE)
+                : koEnrichmentBatchService.peekUncheckedExternalIds(artistId, LOOKUP_BATCH_SIZE);
         if (externalIds.isEmpty()) {
             return new KoBatch(0, 0, 0);
         }
         int matched = koEnrichmentBatchService.applyKo(externalIds, iTunesAPIClient.lookupKrByTrackIds(externalIds));
-        return new KoBatch(externalIds.size(), matched, koEnrichmentBatchService.countUnchecked());
+        long remaining = artistId == null
+                ? koEnrichmentBatchService.countUnchecked()
+                : koEnrichmentBatchService.countUnchecked(artistId);
+        return new KoBatch(externalIds.size(), matched, remaining);
     }
 
     public long getArtistIdPendingCount() {

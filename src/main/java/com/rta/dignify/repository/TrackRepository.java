@@ -85,6 +85,11 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
     @Query("SELECT t.externalId FROM Track t WHERE t.koChecked = FALSE ORDER BY t.id LIMIT :limit")
     List<String> findUncheckedExternalIds(@Param("limit") Integer limit);
 
+    /// 어드민 [수집] 직후 그 아티스트 곡만 보강한다. 전체 큐가 밀려 있어도 방금 수집한 곡이 먼저 채워진다.
+    /// ponytail: artist_id 인덱스 없이 seq scan이다. 수집 한 번에 1~2번 부르는 거라 둔다.
+    @Query("SELECT t.externalId FROM Track t WHERE t.koChecked = FALSE AND t.artistId = :artistId ORDER BY t.id LIMIT :limit")
+    List<String> findUncheckedExternalIdsByArtistId(@Param("artistId") Long artistId, @Param("limit") Integer limit);
+
     /// 무드 슬롯 후보 20곡을 한 번에 읽는다. genre가 LAZY라 FeedItem을 만들 때 곡마다
     /// 한 번씩 더 나가는 걸 막으려고 JOIN FETCH를 건다.
     @Query("SELECT t FROM Track t JOIN FETCH t.genre WHERE t.id IN :ids")
@@ -93,6 +98,8 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
     List<Track> findByExternalIdIn(List<String> externalIds);
 
     long countByKoCheckedFalse();
+
+    long countByKoCheckedFalseAndArtistId(Long artistId);
 
     /// artistId 백필용. iTunes에서 못 찾은 곡은 artistId가 null로 남으므로, 플래그 컬럼 없이
     /// track_id 커서로 앞으로만 훑는다 — after 없이 IS NULL만 걸면 같은 배치를 무한히 다시 집는다.
