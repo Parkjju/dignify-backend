@@ -217,8 +217,7 @@
           <button id="aidStop" onclick="aidStop = true" style="display:none">중단</button>
         </div>
         <p class="muted">이름이 같은 다른 아티스트를 구분하려면 곡마다 iTunes 아티스트 id가 있어야 한다.
-          컬럼이 생기기 전에 수집된 곡이 비어 있다. 한글 보강과 같은 속도로 돈다 —
-          190곡씩, 배치 사이 30초, 탭을 열어둔 동안만.
+          컬럼이 생기기 전에 수집된 곡이 비어 있다. 190곡씩, 배치 사이 4초, 탭을 열어둔 동안만.
           iTunes에서 내려간 곡은 조회가 안 돼 끝나도 몇 곡은 미채움으로 남는다.</p>
       </div>
     </div>
@@ -750,15 +749,16 @@ async function backfillArtistId() {
   aidStop = false;
   $('#aidRun').style.display = 'none';
   $('#aidStop').style.display = '';
-  let done = 0, cursor = 0;
+  let done = 0, found = 0, cursor = 0;
   try {
     while (!aidStop) {
       const r = await api('POST', '/internal/admin/backfill-artist-id/batch?after=' + cursor);
       // checked가 0이면 커서가 끝까지 간 것. remaining은 못 찾은 곡 때문에 0이 아닐 수 있다.
-      if (r.checked === 0) { aidLine(r.remaining, ` — 이번에 ${done}곡 처리`); break; }
+      if (r.checked === 0) { aidLine(r.remaining, ` — 이번에 ${done}곡 확인, ${found}곡 채움. 남은 곡은 iTunes US에서 조회되지 않는다`); break; }
       cursor = r.cursor;
       done += r.checked;
-      aidLine(r.remaining, ` — 이번에 ${done}곡 처리(id 찾음 ${r.matched})`);
+      found += r.matched;
+      aidLine(r.remaining, ` — 이번에 ${done}곡 확인, ${found}곡 채움`);
       for (let i = 0; i < AID_PAUSE_MS / 1000 && !aidStop; i++) await new Promise(r => setTimeout(r, 1000));
     }
     toast(aidStop ? `중단했다 — ${done}곡까지 처리됨` : `끝났다 — ${done}곡 처리`);

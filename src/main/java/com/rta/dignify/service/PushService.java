@@ -13,7 +13,10 @@ import com.google.firebase.messaging.FirebaseMessagingException;
 import com.google.firebase.messaging.Message;
 import com.google.firebase.messaging.MessagingErrorCode;
 import com.rta.dignify.domain.PushLog;
+import com.rta.dignify.domain.Track;
 import com.rta.dignify.domain.UserDeviceToken;
+import com.rta.dignify.global.exception.BusinessException;
+import com.rta.dignify.global.exception.ErrorCode;
 import com.rta.dignify.repository.PushLogRepository;
 import com.rta.dignify.repository.UserDeviceTokenRepository;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +32,9 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -42,6 +48,14 @@ import java.util.concurrent.TimeoutException;
 public class PushService {
     /// 발송 허용 시간대(기기 로컬 기준). 밖이면 건너뛴다.
     static final int AWAKE_FROM = 9, AWAKE_UNTIL = 22;
+    /// 광고성 타입은 21시에 끊는다. 야간(21~08시) 발송은 별도 야간 동의가 필요한데 그건 받지 않는다(제50조 3항).
+    static final int AD_AWAKE_UNTIL = 21;
+    /// 광고성 정보로 운영하는 타입(2026-10-28 확정). 동의 필터·`(광고)` 접두어·수신거부 카테고리·21시 컷이
+    /// 전부 이 집합 하나로 갈린다. `pick_reaction`은 활동 알림이라 밖이다 — 문구에 홍보를 섞는 순간 안으로 와야 한다.
+    static final Set<String> AD_TYPES = Set.of("curation", "new_release", "weekly_pick");
+    static final String AD_PREFIX = "(광고) ";
+    /// iOS가 「수신거부」 액션을 등록해 둔 `UNNotificationCategory` id.
+    static final String AD_CATEGORY = "AD_PUSH";
     /// 발송 이력을 몇 건까지 남길지. 어드민 화면이 이만큼을 보여준다.
     public static final int LOG_KEEP = 100;
     /// 공지 발송이 APNs/FCM 응답을 기다리는 한도. 넘기면 받은 데까지만 기록하고 돌아간다.
@@ -56,6 +70,14 @@ public class PushService {
     private final PushLogRepository pushLogRepository;
 
     @Value("${apns.bundle-id}") String bundleId;
+    /// 끄면 광고성 발송을 통째로 멈춘다. 켜면 동의한 유저에게만 간다.
+    /// 둘 사이가 없는 이유: 동의 컬럼 기본값이 false라 앱 동의 팝업이 나가기 전에 켜면 대상이 0명이고,
+    /// 필터 없이 보내면 동의 없는 광고 전송이다.
+    @Value("${push.ad.enabled:false}") boolean adEnabled;
+    /// 「수신거부」 액션이 들어간 첫 빌드. 이보다 낮은 기기엔 광고성 알림을 안 보낸다 — 알림에서
+    /// 바로 거부할 수 없으면 위반이다. 플랫폼마다 빌드 번호 체계가 달라 둘로 둔다.
+    @Value("${push.ad.min-build.ios:2147483647}") int adMinBuildIos;
+    @Value("${push.ad.min-build.android:2147483647}") int adMinBuildAndroid;
 
     /// 알림 문구 한 줄. `key`가 있으면 **기기가** 자기 언어로 렌더하고(APNs `loc-key` =
     /// FCM `title_loc_key`), `text`면 서버가 쓴 원문이 그대로 나간다.
@@ -81,10 +103,29 @@ public class PushService {
     /// 계측(`push_opened{type}`)도 같은 값을 쓴다 — 안 실으면 전량 `unknown`으로 뭉친다.
     ///
     /// `pushId`는 발송 이력(`PushLog`)과 열람 이벤트를 잇는 키다. 구버전 앱은 모르는 키라 무시한다.
-    record Alert(Line title, Line body, String type, String pushId) {
-        Alert(Line title, Line body, String type) { this(title, body, type, null); }
+    ///
+    /// 광고성 타입이면 제목 앞에 `(광고)`를 **여기서** 붙인다. 문구마다 넣으면 언젠가 빠뜨린다.
+    /// loc-key 제목엔 붙일 수 없다(기기가 렌더한다) — 광고성 문구는 원문으로만 보낸다.
+    ///
+    /// `trackIds`는 탭했을 때 피드 앞에 붙일 곡(신곡·주간 추천). 없으면 null.
+    record Alert(Line title, Line body, String type, String pushId, List<Long> trackIds) {
+        Alert {
+            if (isAd(type) && title.text() != null && !title.text().startsWith(AD_PREFIX)) {
+                title = Line.raw(AD_PREFIX + title.text());
+            }
+        }
 
-        Alert withPushId(String pushId) { return new Alert(title, body, type, pushId); }
+        Alert(Line title, Line body, String type) { this(title, body, type, null, null); }
+
+        Alert withPushId(String pushId) { return new Alert(title, body, type, pushId, trackIds); }
+    }
+
+    static boolean isAd(String type) {
+        return AD_TYPES.contains(type);
+    }
+
+    public boolean adEnabled() {
+        return adEnabled;
     }
 
     /// 내 픽에 반응이 마일스톤에 닿았음을 알린다(§10.5). 발송 여부 판정은 `PickService`가 한다.
@@ -124,6 +165,31 @@ public class PushService {
                             Line.loc("push_pick_reaction_milestone", String.valueOf(count)), "pick_reaction");
     }
 
+    /// 신곡 알림 문구. **UX Writing 미확정** — 기획 초안(Confluence 13074433 1-3)을 그대로 옮겼다.
+    /// 제목에 가수명이 들어가 긴 이름은 잘린다("가변 이름은 본문" 원칙과 충돌, 확정 때 같이 판단).
+    /// 아티스트 이름은 한국어 표기 우선. tracks는 아티스트 순으로 정렬돼 와야 한다.
+    static Alert newReleaseAlert(List<Track> tracks) {
+        List<String> artists = tracks.stream().map(t -> t.displayArtistName(Locale.KOREAN)).distinct().toList();
+        List<Long> ids = tracks.stream().map(Track::getId).toList();
+        String first = artists.get(0);
+        if (artists.size() == 1) {
+            return new Alert(Line.raw("좋아하실 " + first + " 신곡 들어볼까요? 🎧"),
+                    Line.raw(tracks.size() == 1 ? "신곡과 어울리는 노래들도 함께 준비했어요💗" : first + "의 노래들을 모았어요💪"),
+                    "new_release", null, ids);
+        }
+        return new Alert(Line.raw("좋아하실 아티스트의 신곡들 궁금하지 않으세요?👀"),
+                Line.raw(first + ", " + artists.get(1) + " 외에도 여러 가수의 곡들이 기다리고 있어요🥹"),
+                "new_release", null, ids);
+    }
+
+    /// 주간 추천 문구. 제목은 고정이고 길이가 바뀌는 기준 곡 제목은 본문에 둔다(제목은 한 줄만 보인다).
+    static Alert weeklyPickAlert(String seedTitle, List<Long> trackIds) {
+        return new Alert(Line.raw(WEEKLY_PICK_TITLE),
+                Line.raw("「" + seedTitle + "」를 좋아하셨다면 들어 볼 만한 곡이에요"), "weekly_pick", null, trackIds);
+    }
+
+    static final String WEEKLY_PICK_TITLE = "이번 주 추천 5곡";
+
     /// 운영자가 손으로 쏘는 공지 푸시(run-cron.sh push). 발송 대수를 돌려준다.
     ///
     /// 문구를 loc-key가 아니라 원문 그대로 받는 이유는, 보낼 때마다 내용이 달라 앱에 키를
@@ -144,24 +210,66 @@ public class PushService {
     public int broadcast(String title, String body, String type, boolean force, Long userId, Integer minBuild) {
         Alert draft = new Alert(Line.raw(title), Line.raw(body),
                 type == null || type.isBlank() ? "notice" : type);
+        // 본인 기기 미리보기(userId 지정)는 운영자 자신에게 가는 것이라 동의·플래그를 안 본다.
+        boolean ad = userId == null && isAd(draft.type());
+        if (ad) requireAdEnabled();
         PushLog record = start(userId == null ? "broadcast" : "test", draft, userId, minBuild, force);
         Alert alert = draft.withPushId(record.getPushId());
 
-        List<UserDeviceToken> targets = userId == null
-                ? tokenRepository.findAll()
-                : tokenRepository.findByUserId(userId);
+        List<UserDeviceToken> targets = userId != null ? tokenRepository.findByUserId(userId)
+                : ad ? tokenRepository.findAdConsented()
+                : tokenRepository.findAll();
 
         record.candidates(targets.size());
 
         List<CompletableFuture<Void>> results = new ArrayList<>();
         for (UserDeviceToken t : targets) {
-            if (!meetsMinBuild(t.getAppBuild(), minBuild)) { record.skippedBuild(); continue; }
-            if (userId == null && !force && !isAwakeHour(t.getTimeZone(), Instant.now())) { record.skippedQuiet(); continue; }
+            if (!meetsMinBuild(t.getAppBuild(), minBuild) || ad && !meetsAdMinBuild(t)) { record.skippedBuild(); continue; }
+            if (userId == null && !force && !isAwakeHour(t.getTimeZone(), Instant.now(), ad ? AD_AWAKE_UNTIL : AWAKE_UNTIL)) { record.skippedQuiet(); continue; }
             results.add(send(t, alert, record));
         }
+        await(results);
+        save(record);
+        return results.size();
+    }
 
-        // 응답을 이 요청 안에서 기다린다. 요청이 끝나면 Cloud Run이 CPU를 거둬 콜백이 기어가고,
-        // 어드민이 발송 직후 이력을 열었을 때 결과가 비어 있게 된다.
+    /// 유저마다 내용이 다른 광고성 발송(신곡 알림·주간 추천)의 이력 행을 연다. 실행 1회 = 이력 1행 = pushId 1개라
+    /// A/B 그룹(실행 시각)별 열람률이 이 행에서 바로 갈린다. 호출부는 pushId를 받아 자기 기록에 남긴 뒤
+    /// `sendEach`로 보낸다(주간 추천은 `weekly_picks.push_id`).
+    public PushLog begin(String kind, String type, String title, String body) {
+        requireAdEnabled();
+        return PushLog.start(kind, type, AD_PREFIX + title, body, null, null, false);
+    }
+
+    /// 유저별 알림을 그 유저의 모든 기기로. 광고성 규칙(동의·빌드·21시)은 `broadcast`와 같다.
+    /// 발송 대수를 돌려준다.
+    public int sendEach(PushLog record, Map<Long, Alert> byUser) {
+        if (byUser.isEmpty()) return 0;
+        List<UserDeviceToken> targets = tokenRepository.findAdConsentedByUserIds(byUser.keySet());
+        record.candidates(targets.size());
+
+        List<CompletableFuture<Void>> results = new ArrayList<>();
+        for (UserDeviceToken t : targets) {
+            if (!meetsAdMinBuild(t)) { record.skippedBuild(); continue; }
+            if (!isAwakeHour(t.getTimeZone(), Instant.now(), AD_AWAKE_UNTIL)) { record.skippedQuiet(); continue; }
+            results.add(send(t, byUser.get(t.getUser().getId()).withPushId(record.getPushId()), record));
+        }
+        await(results);
+        save(record);
+        return results.size();
+    }
+
+    private void requireAdEnabled() {
+        if (!adEnabled) throw new BusinessException(ErrorCode.AD_PUSH_DISABLED);
+    }
+
+    private boolean meetsAdMinBuild(UserDeviceToken t) {
+        return meetsMinBuild(t.getAppBuild(), t.isAndroid() ? adMinBuildAndroid : adMinBuildIos);
+    }
+
+    /// 응답을 이 요청 안에서 기다린다. 요청이 끝나면 Cloud Run이 CPU를 거둬 콜백이 기어가고,
+    /// 어드민이 발송 직후 이력을 열었을 때 결과가 비어 있게 된다.
+    private static void await(List<CompletableFuture<Void>> results) {
         try {
             CompletableFuture.allOf(results.toArray(CompletableFuture[]::new)).get(RESULT_WAIT_SECONDS, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
@@ -171,8 +279,6 @@ public class PushService {
         } catch (ExecutionException e) {
             // send가 돌려주는 future는 실패로 끝나지 않는다. 혹시 오면 받은 데까지 기록한다.
         }
-        save(record);
-        return results.size();
     }
 
     private static PushLog start(String kind, Alert alert, Long userId, Integer minBuild, boolean force) {
@@ -275,6 +381,12 @@ public class PushService {
         if (alert.pushId() != null) {
             builder.addCustomProperty("push_id", alert.pushId());
         }
+        if (alert.trackIds() != null) {
+            builder.addCustomProperty("trackIds", alert.trackIds());
+        }
+        if (isAd(alert.type())) {
+            builder.setCategoryName(AD_CATEGORY);
+        }
 
         if (alert.title().key() != null) {
             builder.setLocalizedAlertTitle(alert.title().key(), alert.title().args());
@@ -312,6 +424,10 @@ public class PushService {
         if (alert.pushId() != null) {
             message.putData("push_id", alert.pushId());
         }
+        // FCM data는 문자열만 받는다. 수신거부 액션은 앱이 type을 보고 알림을 만들 때 단다.
+        if (alert.trackIds() != null) {
+            message.putData("trackIds", alert.trackIds().stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(",")));
+        }
         return message
                 .setToken(token)
                 .putData("type", alert.type())
@@ -328,6 +444,10 @@ public class PushService {
     /// 타임존은 앱이 보낸 문자열이라 그대로 믿을 수 없다. 비었거나 파싱이 안 되면 UTC로 친다 —
     /// 구버전 앱 토큰이 여기 걸리는데, 한 명 때문에 발송 전체가 죽는 것보다 낫다.
     static boolean isAwakeHour(String timeZone, Instant now) {
+        return isAwakeHour(timeZone, now, AWAKE_UNTIL);
+    }
+
+    static boolean isAwakeHour(String timeZone, Instant now, int until) {
         ZoneId zone = ZoneOffset.UTC;
         if (timeZone != null && !timeZone.isBlank()) {
             try {
@@ -337,6 +457,6 @@ public class PushService {
             }
         }
         int hour = now.atZone(zone).getHour();
-        return hour >= AWAKE_FROM && hour < AWAKE_UNTIL;
+        return hour >= AWAKE_FROM && hour < until;
     }
 }

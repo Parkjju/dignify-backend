@@ -8,8 +8,10 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -94,6 +96,40 @@ public class MoodRecommender {
 
         user.updateFeedState(ids.size() < limit ? null : state.sentDownTo(sims.get(sims.size() - 1)));
         return ids;
+    }
+
+    /// 이 곡들과 무드가 가까운 순(주간 추천 시드 1개, 신곡 연관 피드 시드 여러 개). 하입·큐레이션·들은 곡은 뺀다.
+    ///
+    /// **`feed_state`를 읽지도 바꾸지도 않는다.** `orderedTrackIds`를 임시 시드로 부르면 `FeedState.begin`이
+    /// 시드가 안 겹친다고 θ를 1.0으로 되돌려 평소 피드가 처음부터 다시 나간다.
+    ///
+    /// 들은 곡은 스캔 안에서 조인하지 않고(하입 조인만으로 +203ms) 그 수만큼 더 뽑은 뒤 자바에서 뺀다 —
+    /// orderSql이 하입을 빼는 방식과 같다. 시드는 앞 SEEDS개만 쓴다(스캔 비용이 시드 수에 선형이다).
+    /// 벡터가 없는 시드는 버리고, 하나도 없으면 빈 리스트다. userId가 null(게스트)이면 제외 없이 정렬만 한다.
+    public List<Long> similarTo(List<Long> seedTrackIds, Long userId, int limit) {
+        List<Seed> seeds = new ArrayList<>();
+        vectors(seedTrackIds.stream().distinct().limit(SEEDS).toList()).forEach((id, v) -> seeds.add(new Seed(id, v)));
+        if (seeds.isEmpty() || limit <= 0) {
+            return List.of();
+        }
+        Set<Long> listened = userId == null ? Set.of() : listenedTrackIds(userId);
+        List<Object> params = new ArrayList<>(List.of(flatten(seeds)));
+        params.add(1.0 + EPSILON);                // θ — 처음부터
+        params.add(limit + listened.size());
+        params.add(userId);
+        params.add(userId);
+        params.add(limit + listened.size());
+        List<Long> ids = new ArrayList<>();
+        jdbcTemplate.query(orderSql(seeds.size(), 0, 0), rs -> {
+            long id = rs.getLong("track_id");
+            if (!listened.contains(id) && ids.size() < limit) ids.add(id);
+        }, params.toArray());
+        return ids;
+    }
+
+    private Set<Long> listenedTrackIds(Long userId) {
+        return new HashSet<>(jdbcTemplate.queryForList(
+                "SELECT DISTINCT track_id FROM listened_tracks WHERE user_id = ?", Long.class, userId));
     }
 
     /// 이 곡들이 **어느 하입 곡 때문에 떴는지**. 정렬은 시드별 내적의 최댓값으로 하므로,

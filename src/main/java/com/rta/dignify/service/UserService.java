@@ -14,6 +14,8 @@ import com.rta.dignify.global.util.ProfanityFilter;
 import com.rta.dignify.repository.GenreRepository;
 import com.rta.dignify.dto.user.DiggingModeUpdateRequest;
 import com.rta.dignify.dto.user.SeedTracksUpdateRequest;
+import com.rta.dignify.dto.user.AdPushConsentResponse;
+import com.rta.dignify.repository.UserDeviceTokenRepository;
 import com.rta.dignify.repository.UserGenreRepository;
 import com.rta.dignify.repository.UserHypeTrackRepository;
 import com.rta.dignify.repository.UserRepository;
@@ -21,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.util.List;
 
 @RequiredArgsConstructor
@@ -30,6 +33,8 @@ public class UserService {
     private final UserGenreRepository userGenreRepository;
     private final GenreRepository genreRepository;
     private final UserHypeTrackRepository userHypeTrackRepository;
+    private final UserDeviceTokenRepository userDeviceTokenRepository;
+    private final Clock clock;
 
     @Transactional(readOnly = true)
     public UserProfileResponse getUserProfile(Long userId) {
@@ -63,6 +68,24 @@ public class UserService {
     @Transactional
     public void changeDiggingMode(Long userId, DiggingModeUpdateRequest request) {
         userRepository.getReferenceById(userId).changeDiggingMode(request.enabled());
+    }
+
+    /// 광고성 알림 수신 동의·거부. 처리 시각을 돌려준다 — 앱의 결과 통지가 이 값을 쓴다.
+    @Transactional
+    public AdPushConsentResponse changeAdPushConsent(Long userId, boolean consent) {
+        User user = userRepository.findById(userId).orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        user.changeAdPushConsent(consent, clock.instant());
+        return new AdPushConsentResponse(consent, user.getAdPushConsentAt());
+    }
+
+    /// 알림의 「수신거부」 버튼. 로그인 없이 기기 토큰만으로 그 기기 주인의 동의를 거둔다 —
+    /// 수신거부에 로그인을 요구하면 위반이다(KISA 안내서 44쪽).
+    @Transactional
+    public AdPushConsentResponse optOutByDeviceToken(String deviceToken) {
+        User user = userDeviceTokenRepository.findByToken(deviceToken)
+                .orElseThrow(() -> new BusinessException(ErrorCode.DEVICE_TOKEN_NOT_FOUND)).getUser();
+        user.changeAdPushConsent(false, clock.instant());
+        return new AdPushConsentResponse(false, user.getAdPushConsentAt());
     }
 
     /// 추천 기준 곡을 통째로 갈아 끼운다. 지우고 다시 세우는 편이 차집합을 계산하는 것보다

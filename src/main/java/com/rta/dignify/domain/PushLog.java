@@ -108,6 +108,11 @@ public class PushLog {
     @Column(name = "opened_android")
     private int openedAndroid;
 
+    /// 이 알림의 「수신거부」를 누른 수. 회차 문구·시각이 거부를 늘리는지 본다.
+    @ColumnDefault("0")
+    @Column(name = "opted_out")
+    private int optedOut;
+
     /// "ios:BadDeviceToken" → 3 처럼 플랫폼:사유별 실패 수.
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "failure_reasons")

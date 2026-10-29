@@ -20,6 +20,14 @@ public interface PushLogRepository extends JpaRepository<PushLog, Long> {
             WHERE p.pushId = :pushId""")
     int markOpened(String pushId, int ios, int android);
 
+    @Modifying(clearAutomatically = true)
+    @Transactional
+    @Query("UPDATE PushLog p SET p.optedOut = p.optedOut + 1 WHERE p.pushId = :pushId")
+    int markOptedOut(String pushId);
+
+    /// 그 시각 이후 이 kind의 발송이 있었는지. 같은 회차 재실행을 막는다.
+    boolean existsByKindAndSentAtGreaterThanEqual(String kind, java.time.Instant since);
+
     /// 최근 keep건만 남긴다. 발송할 때마다 불러 테이블 크기를 고정한다.
     @Modifying
     @Transactional

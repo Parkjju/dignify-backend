@@ -42,6 +42,8 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.GET, "/picks", "/picks/*").permitAll()
                     // 콜드 스타트 직후엔 토큰 갱신 전이라 인증을 걸면 열람이 401로 빠진다.
                     .requestMatchers(HttpMethod.POST, "/push/*/opened").permitAll()
+                    // 수신거부에 로그인을 요구하면 위반이다(정보통신망법 제50조).
+                    .requestMatchers(HttpMethod.POST, "/push/*/opt-out").permitAll()
                     .anyRequest().authenticated())
             .exceptionHandling(exception -> exception.authenticationEntryPoint(authenticationEntryPoint))
             .addFilterBefore(new JwtAuthenticationFilter(jwtProvider, authenticationEntryPoint), UsernamePasswordAuthenticationFilter.class);

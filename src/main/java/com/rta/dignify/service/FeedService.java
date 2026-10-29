@@ -81,6 +81,27 @@ public class FeedService {
         return response;
     }
 
+    /// 신곡 구간처럼 곡이 이미 정해진 목록. 한 페이지로 끝난다.
+    @Transactional(readOnly = true)
+    public FeedResponse getTracks(List<Long> ids) {
+        return new FeedResponse(itemsInOrder(ids), null, false, false);
+    }
+
+    /// 상한은 한 페이지(FETCH_LIMIT)다 — 연관 구간은 다섯 번 넘기면 평소 피드로 돌아가므로 더 받을 일이 없다.
+    @Transactional(readOnly = true)
+    public FeedResponse getRelated(Long userId, List<Long> seeds, int limit) {
+        List<Long> ids = moodRecommender.similarTo(seeds, userId, Math.min(Math.max(limit, 0), FETCH_LIMIT));
+        return new FeedResponse(itemsInOrder(ids), null, false, false);
+    }
+
+    /// id 순서 그대로. 하입·들은 곡은 호출부가 이미 뺐으므로 isHyped는 false다.
+    private List<FeedItem> itemsInOrder(List<Long> ids) {
+        if (ids.isEmpty()) return List.of();
+        Map<Long, Track> byId = trackRepository.findAllByIdInFetchGenre(ids).stream()
+                .collect(Collectors.toMap(Track::getId, Function.identity()));
+        return ids.stream().map(byId::get).filter(Objects::nonNull).map(t -> FeedItem.from(t, false)).toList();
+    }
+
     /// 유저가 고른 장르 안의 곡을 한 페이지 분량 가져온다.
     ///
     /// 하입이 있으면 무드 유사도 내림차순, 없으면 콜드스타트 인기 풀, 그것도 얇으면 종전 무작위다.

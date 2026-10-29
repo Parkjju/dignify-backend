@@ -156,4 +156,14 @@ public class JwtAuthenticationTest {
 
         ReflectionTestUtils.invokeMethod(jwtProvider, "init"); // @PostConstruct 메서드 강제 실행
     }
+
+    /// 수신거부에 로그인을 요구하면 위반이다(정보통신망법 제50조). 필터를 통과하면 컨트롤러가 없는 토큰이라 404를 낸다.
+    @Test
+    @DisplayName("수신거부는 토큰 없이 필터를 통과한다")
+    void optOutIsPermitted() throws Exception {
+        mockMvc.perform(MockMvcRequestBuilders.post("/push/any/opt-out")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"deviceToken\":\"nope\"}"))
+                .andExpect(MockMvcResultMatchers.status().isNotFound())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.code").value("DEVICE_TOKEN_NOT_FOUND"));
+    }
 }

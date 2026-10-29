@@ -42,6 +42,16 @@ public class User extends BaseTimeEntity {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    /// 광고성 알림(큐레이션·신곡·주간 추천) 수신 동의. **OS 알림 권한과 별개다** — 권한은 광고 수신
+    /// 동의가 아니다(정보통신망법 제50조, KISA 안내서 Q&A 02-03). 기본 false라 동의 팝업을 거친 유저만 true다.
+    @ColumnDefault("false")
+    @Column(name = "ad_push_consent", nullable = false)
+    private Boolean adPushConsent = false;
+
+    /// 마지막 동의·거부 처리 시각. 앱의 결과 통지(제50조 7항)와 2년 재확인(8항)의 기준이다.
+    @Column(name = "ad_push_consent_at")
+    private Instant adPushConsentAt;
+
     /// 무드 피드 진행 위치. null이면 처음부터다(게스트·시드 없는 유저는 안 쓴다).
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "feed_state")
@@ -70,6 +80,11 @@ public class User extends BaseTimeEntity {
 
     public void changeDiggingMode(boolean enabled) {
         this.diggingMode = enabled;
+    }
+
+    public void changeAdPushConsent(boolean consent, Instant now) {
+        this.adPushConsent = consent;
+        this.adPushConsentAt = now;
     }
 
     public void updateFeedState(FeedState feedState) {

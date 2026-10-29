@@ -136,4 +136,47 @@ class PushServiceTest {
         assertThat(PushService.describe(PushService.Line.loc("push_x", "kim"))).isEqualTo("push_x(kim)");
         assertThat(PushService.describe(PushService.Line.loc("push_y"))).isEqualTo("push_y");
     }
+
+    @Test
+    @DisplayName("광고성 타입은 제목에 (광고)가 한 번만 붙고, 활동·공지 알림엔 안 붙는다")
+    void adPrefix() {
+        PushService.Alert alert = PushService.weeklyPickAlert("Happier", java.util.List.of(1L, 2L));
+        assertThat(alert.title().text()).isEqualTo("(광고) 이번 주 추천 5곡");
+        assertThat(alert.withPushId("p").title().text()).isEqualTo("(광고) 이번 주 추천 5곡");
+        assertThat(alert.body().text()).contains("「Happier」");
+
+        assertThat(new PushService.Alert(PushService.Line.raw("새 기능"), PushService.Line.raw("b"), "curation").title().text())
+                .isEqualTo("(광고) 새 기능");
+        assertThat(new PushService.Alert(PushService.Line.raw("새 기능"), PushService.Line.raw("b"), "notice").title().text())
+                .isEqualTo("새 기능");
+        assertThat(PushService.isAd("pick_reaction")).isFalse();
+    }
+
+    @Test
+    @DisplayName("광고성 페이로드엔 수신거부 카테고리와 trackIds가 실린다")
+    void adPayload() {
+        String payload = PushService.apnsPayload(PushService.weeklyPickAlert("X", java.util.List.of(7L, 8L)).withPushId("p"));
+        assertThat(payload).contains("\"category\":\"AD_PUSH\"").contains("\"trackIds\":[7,8]");
+
+        String notice = PushService.apnsPayload(new PushService.Alert(PushService.Line.raw("t"), PushService.Line.raw("b"), "notice"));
+        assertThat(notice).doesNotContain("AD_PUSH").doesNotContain("trackIds");
+    }
+
+    @Test
+    @DisplayName("광고성 타입은 21시에 끊는다 — 서울 21:30은 일반 알림만 나간다")
+    void adQuietFrom21() {
+        Instant seoul2130 = Instant.parse("2026-07-28T12:30:00Z");
+        assertThat(PushService.isAwakeHour("Asia/Seoul", seoul2130)).isTrue();
+        assertThat(PushService.isAwakeHour("Asia/Seoul", seoul2130, PushService.AD_AWAKE_UNTIL)).isFalse();
+    }
+
+    @Test
+    @DisplayName("A/B — 짝수 A·홀수 B, 신곡과 주간 추천은 서로 반대 시각")
+    void variant() {
+        assertThat(com.rta.dignify.domain.PushVariant.of(10)).isEqualTo(com.rta.dignify.domain.PushVariant.A);
+        assertThat(com.rta.dignify.domain.PushVariant.of(11)).isEqualTo(com.rta.dignify.domain.PushVariant.B);
+        var am = com.rta.dignify.domain.PushVariant.Slot.parse("am");
+        assertThat(com.rta.dignify.domain.PushVariant.newReleaseGroup(am)).isEqualTo(com.rta.dignify.domain.PushVariant.A);
+        assertThat(com.rta.dignify.domain.PushVariant.weeklyPickGroup(am)).isEqualTo(com.rta.dignify.domain.PushVariant.B);
+    }
 }

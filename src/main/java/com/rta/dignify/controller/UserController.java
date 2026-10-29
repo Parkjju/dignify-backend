@@ -4,6 +4,8 @@ import com.rta.dignify.dto.DeviceTokenRegister;
 import com.rta.dignify.dto.hype.HypeGenresResponse;
 import com.rta.dignify.dto.hype.HypeListResponse;
 import com.rta.dignify.dto.stats.UserStatsResponse;
+import com.rta.dignify.dto.user.AdPushConsentRequest;
+import com.rta.dignify.dto.user.AdPushConsentResponse;
 import com.rta.dignify.dto.user.DiggingModeUpdateRequest;
 import com.rta.dignify.dto.user.NicknameUpdateRequest;
 import com.rta.dignify.dto.user.NicknameUpdateResponse;
@@ -59,6 +61,11 @@ public class UserController {
     @PatchMapping("/me/digging-mode")
     public void changeDiggingMode(@AuthenticationPrincipal Long userId, @RequestBody @Valid DiggingModeUpdateRequest request) {
         userService.changeDiggingMode(userId, request);
+    }
+
+    @PutMapping("/me/push-consent")
+    public AdPushConsentResponse changeAdPushConsent(@AuthenticationPrincipal Long userId, @RequestBody @Valid AdPushConsentRequest request) {
+        return userService.changeAdPushConsent(userId, request.adPush());
     }
 
     /// 추천 기준 곡 고정. 빈 배열이 해제다.

@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 
 public interface TrackRepository extends JpaRepository<Track, Long> {
@@ -106,4 +108,11 @@ public interface TrackRepository extends JpaRepository<Track, Long> {
     List<Track> findByArtistIdIsNullAndIdGreaterThanOrderById(Long after, Limit limit);
 
     long countByArtistIdIsNull();
+
+    /// 신곡 후보 — 이 시각 이후 저장됐고 발매가 [from, now]인 곡. 재발매 판별은 `NewReleaseService`가 한다.
+    @Query("SELECT t FROM Track t WHERE t.createdAt >= :since AND t.createdAt <= :now " +
+            "AND t.releaseDate >= :from AND t.releaseDate <= :now AND t.artistId IS NOT NULL AND t.isActive = TRUE ORDER BY t.id")
+    List<Track> findNewReleaseCandidates(@Param("since") Instant since, @Param("from") Instant from, @Param("now") Instant now);
+
+    List<Track> findByArtistIdInAndCreatedAtBefore(Collection<Long> artistIds, Instant before);
 }

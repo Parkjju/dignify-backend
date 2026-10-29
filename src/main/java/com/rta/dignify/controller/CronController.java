@@ -1,6 +1,9 @@
 package com.rta.dignify.controller;
 
+import com.rta.dignify.domain.PushVariant;
 import com.rta.dignify.global.security.InternalSecrets;
+import com.rta.dignify.service.NewReleaseService;
+import com.rta.dignify.service.WeeklyPickService;
 import com.rta.dignify.service.cron.CronBatchService;
 import com.rta.dignify.service.cron.CronService;
 import com.rta.dignify.service.cron.KoEnrichmentService;
@@ -17,6 +20,8 @@ public class CronController {
     private final CronService cronService;
     private final KoEnrichmentService koEnrichmentService;
     private final InternalSecrets internalSecrets;
+    private final NewReleaseService newReleaseService;
+    private final WeeklyPickService weeklyPickService;
 
     @PostMapping("/internal/cron/collect")
     public ResponseEntity<Void> processCronJob(
@@ -53,5 +58,27 @@ public class CronController {
 
         koEnrichmentService.enrichKo();
         return ResponseEntity.accepted().build();
+    }
+
+    /// 신곡 알림. Cloud Scheduler가 매일 한국 09:05(am)·18:05(pm)에 부른다(타임존 Asia/Seoul).
+    /// **09:00 이전 금지** — 한국 기기가 발송 시간대 밖이라 전원 스킵되고 재발송이 없다.
+    /// 발송까지 요청 안에서 끝낸다(Cloud Run은 요청이 끝나면 CPU를 거둔다).
+    @PostMapping("/internal/cron/new-releases")
+    public ResponseEntity<NewReleaseService.RunResult> newReleases(
+            @RequestHeader("X-Cron-Secret") String requestSecret,
+            @RequestParam String slot) throws InterruptedException {
+        internalSecrets.verifyCron(requestSecret);
+
+        return ResponseEntity.ok(newReleaseService.run(PushVariant.Slot.parse(slot)));
+    }
+
+    /// 주간 추천. Cloud Scheduler가 매주 월요일 한국 09:05(am)·18:05(pm)에 부른다.
+    @PostMapping("/internal/cron/weekly-picks")
+    public ResponseEntity<WeeklyPickService.RunResult> weeklyPicks(
+            @RequestHeader("X-Cron-Secret") String requestSecret,
+            @RequestParam String slot) {
+        internalSecrets.verifyCron(requestSecret);
+
+        return ResponseEntity.ok(weeklyPickService.run(PushVariant.Slot.parse(slot)));
     }
 }
