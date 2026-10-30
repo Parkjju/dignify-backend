@@ -1,5 +1,6 @@
 package com.rta.dignify.controller;
 
+import com.rta.dignify.client.discord.DiscordNotifier;
 import com.rta.dignify.domain.PushVariant;
 import com.rta.dignify.global.security.InternalSecrets;
 import com.rta.dignify.service.NewReleaseService;
@@ -22,6 +23,8 @@ public class CronController {
     private final InternalSecrets internalSecrets;
     private final NewReleaseService newReleaseService;
     private final WeeklyPickService weeklyPickService;
+    // ponytail: 결과만 팀 채널에. 요청 타임아웃(300s)으로 끊기면 아무것도 안 온다 — 그땐 Scheduler 실패 로그.
+    private final DiscordNotifier discordNotifier;
 
     @PostMapping("/internal/cron/collect")
     public ResponseEntity<Void> processCronJob(
@@ -68,8 +71,17 @@ public class CronController {
             @RequestHeader("X-Cron-Secret") String requestSecret,
             @RequestParam String slot) throws InterruptedException {
         internalSecrets.verifyCron(requestSecret);
+        PushVariant.Slot s = PushVariant.Slot.parse(slot);
 
-        return ResponseEntity.ok(newReleaseService.run(PushVariant.Slot.parse(slot)));
+        try {
+            NewReleaseService.RunResult r = newReleaseService.run(s);
+            discordNotifier.notify("🆕 신곡 알림 " + slot + " — 저장 " + r.saved() + "곡 · 신곡 " + r.newReleases()
+                    + "곡 · 대상 " + r.users() + "명 · 발송 " + r.sent() + "명");
+            return ResponseEntity.ok(r);
+        } catch (RuntimeException | InterruptedException e) {
+            discordNotifier.notify("❌ 신곡 알림 " + slot + " 실패: " + e.getMessage());
+            throw e;
+        }
     }
 
     /// 주간 추천. Cloud Scheduler가 매주 월요일 한국 09:05(am)·18:05(pm)에 부른다.
@@ -78,7 +90,16 @@ public class CronController {
             @RequestHeader("X-Cron-Secret") String requestSecret,
             @RequestParam String slot) {
         internalSecrets.verifyCron(requestSecret);
+        PushVariant.Slot s = PushVariant.Slot.parse(slot);
 
-        return ResponseEntity.ok(weeklyPickService.run(PushVariant.Slot.parse(slot)));
+        try {
+            WeeklyPickService.RunResult r = weeklyPickService.run(s);
+            discordNotifier.notify("📅 주간 추천 " + slot + " — 대상 " + r.targets() + "명 · 추천 생성 " + r.picked()
+                    + "명 · 발송 " + r.sent() + "명");
+            return ResponseEntity.ok(r);
+        } catch (RuntimeException e) {
+            discordNotifier.notify("❌ 주간 추천 " + slot + " 실패: " + e.getMessage());
+            throw e;
+        }
     }
 }
