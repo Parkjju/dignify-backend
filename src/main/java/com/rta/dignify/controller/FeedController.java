@@ -39,6 +39,12 @@ public class FeedController {
         return feedService.getTracks(newReleaseService.feedTrackIds(userId));
     }
 
+    /// 알림이 실어 온 곡(신곡·주간 추천)을 그 순서대로. 내려간 곡은 빠진다.
+    @GetMapping("/tracks")
+    public FeedResponse getTracks(@RequestParam List<Long> ids) {
+        return feedService.getTracks(ids.stream().limit(100).toList());
+    }
+
     /// 이 곡들과 무드가 가까운 곡(신곡 연관 피드). 평소 피드의 진행 위치는 안 바뀐다.
     @GetMapping("/related")
     public FeedResponse getRelated(@AuthenticationPrincipal Long userId, @RequestParam List<Long> seeds,

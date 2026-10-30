@@ -404,7 +404,25 @@ public class PushService {
     /// 문구를 `android.notification`에만 싣는다. 최상위 `notification`은 제목·본문을 문자열로
     /// 요구해서 loc-key를 실을 자리가 없다 — 안드로이드 전용 블록에 넣어야 기기가 strings.xml에서
     /// 자기 언어로 꺼내 쓴다(그래서 키 이름이 리소스 이름과 같아야 한다).
+    ///
+    /// 광고성 타입은 예외로 **data만** 보낸다. `android.notification`이 있으면 백그라운드에선 시스템이 알림을
+    /// 직접 그리고 앱 코드가 한 줄도 안 돌아서 「수신거부」 액션을 달 수 없다. 앱(`DignifyMessagingService`)이
+    /// `title`·`body`로 알림을 만든다. 광고성 문구는 원문뿐이라(Alert 주석) loc-key를 실을 일이 없다.
+    /// 우선순위를 HIGH로 둬야 도즈 중인 기기에서도 바로 깨어 알림을 띄운다.
     static Message fcmMessage(String token, Alert alert) {
+        if (isAd(alert.type()) && alert.title().text() != null && alert.body().text() != null) {
+            Message.Builder message = Message.builder()
+                    .setToken(token)
+                    .putData("type", alert.type())
+                    .putData("title", alert.title().text())
+                    .putData("body", alert.body().text())
+                    .setAndroidConfig(AndroidConfig.builder().setPriority(AndroidConfig.Priority.HIGH).build());
+            if (alert.pushId() != null) message.putData("push_id", alert.pushId());
+            if (alert.trackIds() != null) {
+                message.putData("trackIds", alert.trackIds().stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(",")));
+            }
+            return message.build();
+        }
         AndroidNotification.Builder notification = AndroidNotification.builder().setSound("default");
 
         if (alert.title().key() != null) {
@@ -424,7 +442,7 @@ public class PushService {
         if (alert.pushId() != null) {
             message.putData("push_id", alert.pushId());
         }
-        // FCM data는 문자열만 받는다. 수신거부 액션은 앱이 type을 보고 알림을 만들 때 단다.
+        // FCM data는 문자열만 받는다.
         if (alert.trackIds() != null) {
             message.putData("trackIds", alert.trackIds().stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(",")));
         }

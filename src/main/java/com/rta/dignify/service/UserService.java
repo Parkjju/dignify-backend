@@ -42,7 +42,7 @@ public class UserService {
         List<GenreResponse> genreList = userGenreRepository.findUserGenresByUserId(userId).stream().map((genre) -> GenreResponse.from(genre.getGenre())).toList();
 
         return new UserProfileResponse(user.getNickname(), user.getIsOnboardingComplete(), genreList,
-                Boolean.TRUE.equals(user.getDiggingMode()));
+                Boolean.TRUE.equals(user.getDiggingMode()), Boolean.TRUE.equals(user.getAdPushConsent()));
     }
 
     @Transactional
