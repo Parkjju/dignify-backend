@@ -154,8 +154,15 @@ public class AdminService {
 
         List<String> externalIds = tracks.stream().map(Track::getExternalId).toList();
         long cursor = tracks.get(tracks.size() - 1).getId();
-        int matched = artistIdBackfillService.applyArtistIds(
-                externalIds, iTunesAPIClient.lookupSongsByTrackIds(externalIds));
+        List<ItunesItem> items = new ArrayList<>(iTunesAPIClient.lookupSongsByTrackIds(externalIds));
+        // US에서 내려간 곡도 KR 스토어엔 남아 있는 경우가 많다(10-30 기준 미채움 활성 1,046곡 중 979곡).
+        // artistId는 스토어와 무관하게 같으니 KR 결과로 채워도 된다.
+        Set<String> found = items.stream().map(item -> String.valueOf(item.trackId())).collect(Collectors.toSet());
+        List<String> missing = externalIds.stream().filter(id -> !found.contains(id)).toList();
+        if (!missing.isEmpty()) {
+            items.addAll(iTunesAPIClient.lookupKrByTrackIds(missing));
+        }
+        int matched = artistIdBackfillService.applyArtistIds(externalIds, items);
 
         return new ArtistIdBatch(tracks.size(), matched, cursor, artistIdBackfillService.countMissing());
     }
