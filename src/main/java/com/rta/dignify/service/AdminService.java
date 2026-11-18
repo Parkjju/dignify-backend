@@ -5,6 +5,7 @@ import com.rta.dignify.domain.CurationTrack;
 import com.rta.dignify.domain.PushLog;
 import com.rta.dignify.domain.RequestStatus;
 import com.rta.dignify.domain.Track;
+import com.rta.dignify.domain.User;
 import com.rta.dignify.domain.UserDeviceToken;
 import com.rta.dignify.dto.admin.ArtistIdBatch;
 import com.rta.dignify.dto.admin.ArtistRequestItem;
@@ -21,10 +22,12 @@ import com.rta.dignify.repository.CurationTrackRepository;
 import com.rta.dignify.repository.PushLogRepository;
 import com.rta.dignify.repository.TrackRepository;
 import com.rta.dignify.repository.UserDeviceTokenRepository;
+import com.rta.dignify.repository.UserRepository;
 import com.rta.dignify.service.cron.ArtistIdBackfillService;
 import com.rta.dignify.service.cron.GenreMapping;
 import com.rta.dignify.service.cron.KoEnrichmentBatchService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +38,7 @@ import java.util.stream.Stream;
 
 /// 어드민 화면(/internal/admin.html)이 쓰는 조회/편집. 전부 X-Cron-Secret으로만 막힌다.
 @RequiredArgsConstructor
+@Slf4j
 @Service
 public class AdminService {
     /// 로컬 잡과 같은 크기. iTunes lookup은 id를 한 번에 이만큼까지 받는다.
@@ -45,6 +49,7 @@ public class AdminService {
     private final ArtistRequestRepository artistRequestRepository;
     private final UserDeviceTokenRepository userDeviceTokenRepository;
     private final PushLogRepository pushLogRepository;
+    private final UserRepository userRepository;
     private final ITunesAPIClient iTunesAPIClient;
     private final KoEnrichmentBatchService koEnrichmentBatchService;
     private final ArtistIdBackfillService artistIdBackfillService;
@@ -179,7 +184,8 @@ public class AdminService {
                         userTokens.get(0).getUser().getNickname(),
                         userTokens.size(),
                         userTokens.stream().map(UserDeviceToken::getAppBuild).filter(Objects::nonNull).distinct().sorted().toList(),
-                        userTokens.stream().map(UserDeviceToken::getTimeZone).filter(Objects::nonNull).distinct().sorted().toList()))
+                        userTokens.stream().map(UserDeviceToken::getTimeZone).filter(Objects::nonNull).distinct().sorted().toList(),
+                        adConsentLabel(userTokens.get(0).getUser())))
                 .toList();
 
         // 최신 빌드부터. 빌드 미확인(null)은 맨 뒤 — MIN_BUILD를 걸면 통째로 빠지는 무리라 따로 보여야 한다.
@@ -191,6 +197,22 @@ public class AdminService {
                 .toList();
 
         return new PushTargets(users, builds);
+    }
+
+    static String adConsentLabel(User u) {
+        if (u.getAdPushConsentAt() == null) return "미응답";
+        String night = u.getAdPushNightConsent() == null ? "미응답" : u.getAdPushNightConsent() ? "동의" : "거부";
+        return (Boolean.TRUE.equals(u.getAdPushConsent()) ? "동의" : "거부") + " · 야간 " + night;
+    }
+
+    /// 광고성 동의를 미응답으로 되돌린다(TestFlight 테스터 전용). 동의 이력을 지우므로 누가 언제 했는지 로그를 남긴다.
+    @Transactional
+    public String resetAdPushConsent(Long userId) {
+        User user = userRepository.findById(userId).orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        log.warn("[admin] 광고성 동의 초기화 uid={} 이전={} consentAt={} nightAt={}", userId, adConsentLabel(user),
+                user.getAdPushConsentAt(), user.getAdPushNightConsentAt());
+        user.resetAdPushConsent();
+        return adConsentLabel(user);
     }
 
     @Transactional(readOnly = true)

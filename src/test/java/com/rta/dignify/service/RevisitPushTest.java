@@ -234,4 +234,18 @@ class RevisitPushTest {
         assertThat(profile.adPushConsentAt()).isNotNull();
         assertThat(profile.adPushNightConsent()).isFalse();
     }
+
+    @Test
+    @DisplayName("어드민 초기화 — 동의·야간 응답을 지워 미응답(adPushConsentAt null)으로 되돌린다")
+    void resetAdConsent() {
+        userService.changeAdPushConsent(user.getId(), true);
+        userService.changeAdPushNightConsent(user.getId(), true);
+        user.resetAdPushConsent();
+        var profile = userService.getUserProfile(user.getId());
+        assertThat(profile.adPushConsent()).isFalse();
+        assertThat(profile.adPushConsentAt()).isNull();
+        assertThat(profile.adPushNightConsent()).isNull();
+        assertThat(profile.adPushNightConsentAt()).isNull();
+        assertThat(AdminService.adConsentLabel(user)).isEqualTo("미응답");
+    }
 }

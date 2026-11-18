@@ -96,6 +96,15 @@ public class User extends BaseTimeEntity {
         if (!consent && Boolean.TRUE.equals(adPushNightConsent)) changeAdPushNightConsent(false, now);
     }
 
+    /// 미응답으로 되돌린다 — TestFlight 테스터 전용(어드민). 동의 이력을 지우는 동작이라 일반 유저엔 금지.
+    /// `changeAdPushConsent`를 쓰면 `_at`이 찍혀 「응답함」이 된다.
+    public void resetAdPushConsent() {
+        this.adPushConsent = false;
+        this.adPushConsentAt = null;
+        this.adPushNightConsent = null;
+        this.adPushNightConsentAt = null;
+    }
+
     public void changeAdPushNightConsent(boolean consent, Instant now) {
         this.adPushNightConsent = consent;
         this.adPushNightConsentAt = now;

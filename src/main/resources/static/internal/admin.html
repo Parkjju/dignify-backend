@@ -498,12 +498,23 @@ function loadUsers() {
     let atLeast = 0;
     const cumulative = builds.map(b => (b.build === null ? null : (atLeast += b.devices)));
 
-    $('#users').innerHTML = `<table><tr><th>userId</th><th>닉네임</th><th>기기</th><th>빌드</th><th>타임존</th></tr>
-      ${users.map(u => `<tr><td>${u.userId}</td><td>${esc(u.nickname)}</td><td>${u.devices}</td><td>${u.builds.join(', ') || '-'}</td><td>${esc(u.timeZones.join(', ')) || '-'}</td></tr>`).join('')}</table>
+    $('#users').innerHTML = `<table><tr><th>userId</th><th>닉네임</th><th>기기</th><th>빌드</th><th>타임존</th><th>광고성 동의</th></tr>
+      ${users.map(u => `<tr><td>${u.userId}</td><td>${esc(u.nickname)}</td><td>${u.devices}</td><td>${u.builds.join(', ') || '-'}</td><td>${esc(u.timeZones.join(', ')) || '-'}</td>
+        <td>${esc(u.adConsent)}${u.adConsent === '미응답' ? '' : ` <button onclick="resetAdConsent(${u.userId})">초기화</button>`}</td></tr>`).join('')}</table>
       <h2 style="margin-top:18px">빌드별 기기</h2>
       <table><tr><th>빌드</th><th>기기</th><th>MIN_BUILD로 걸면</th></tr>
       ${builds.map((b, i) => `<tr><td>${b.build ?? '(미확인)'}</td><td>${b.devices}</td>
         <td class="muted">${b.build === null ? '항상 제외' : cumulative[i] + '대에 발송'}</td></tr>`).join('')}</table>`;
+  });
+}
+
+// TestFlight 테스터 전용 — 동의 이력을 지운다. 테스터가 uid를 준 계정에만.
+function resetAdConsent(userId) {
+  if (!confirm(`uid ${userId}의 광고성·야간 동의를 미응답으로 되돌린다. TestFlight 테스터 계정이 맞나?`)) return;
+  run(async () => {
+    await api('POST', `/internal/admin/push/users/${userId}/reset-ad-consent`);
+    toast(`uid ${userId} 초기화 — 앱 완전 종료 후 다시 켜면 첫 실행 팝업`);
+    loadUsers();
   });
 }
 

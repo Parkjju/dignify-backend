@@ -95,6 +95,13 @@ public class AdminController {
         return adminService.getPushTargets();
     }
 
+    /// 광고성 동의를 미응답으로(TestFlight 테스터 전용). 앱 API로 열지 말 것 — 서버는 TestFlight 요청을 못 가린다.
+    @PostMapping("/push/users/{userId}/reset-ad-consent")
+    public Map<String, String> resetAdPushConsent(@RequestHeader("X-Cron-Secret") String secret, @PathVariable Long userId) {
+        internalSecrets.verifyAdmin(secret);
+        return Map.of("adConsent", adminService.resetAdPushConsent(userId));
+    }
+
     /// 최근 발송 이력. 새 것부터.
     @GetMapping("/push/logs")
     public List<PushLog> getPushLogs(@RequestHeader("X-Cron-Secret") String secret) {
