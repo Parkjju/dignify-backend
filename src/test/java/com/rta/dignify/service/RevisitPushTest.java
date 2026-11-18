@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /// 재방문 푸시 2종(신곡 알림·주간 추천)과 광고성 동의. 발송 자체(APNs/FCM)는 테스트 환경에 빈이 없어 빼고,
 /// 누구에게 무엇을 보낼지 정하는 쪽만 본다.
@@ -212,5 +213,25 @@ class RevisitPushTest {
         assertThat(response.adPush()).isFalse();
         assertThat(response.processedAt()).isNotNull();
         assertThat(tokenRepository.findAdConsented()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("야간 동의 — 광고성 없이 켜면 409, 광고성을 끄면 야간도 꺼진다, 미응답은 null 유지")
+    void nightConsent() {
+        assertThatThrownBy(() -> userService.changeAdPushNightConsent(user.getId(), true))
+                .isInstanceOf(com.rta.dignify.global.exception.BusinessException.class);
+
+        userService.changeAdPushConsent(user.getId(), false);
+        assertThat(userService.getUserProfile(user.getId()).adPushNightConsent()).isNull();
+
+        userService.changeAdPushConsent(user.getId(), true);
+        var night = userService.changeAdPushNightConsent(user.getId(), true);
+        assertThat(night.nightPush()).isTrue();
+        assertThat(night.processedAt()).isNotNull();
+
+        userService.changeAdPushConsent(user.getId(), false);
+        var profile = userService.getUserProfile(user.getId());
+        assertThat(profile.adPushConsentAt()).isNotNull();
+        assertThat(profile.adPushNightConsent()).isFalse();
     }
 }

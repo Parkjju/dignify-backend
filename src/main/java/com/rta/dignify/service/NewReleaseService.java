@@ -1,5 +1,6 @@
 package com.rta.dignify.service;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.rta.dignify.client.itunes.ITunesAPIClient;
 import com.rta.dignify.domain.PushLog;
 import com.rta.dignify.domain.PushVariant;
@@ -22,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -64,39 +66,49 @@ public class NewReleaseService {
     private final ObjectProvider<PushService> pushService;
     private final Clock clock;
 
-    public record RunResult(int saved, int newReleases, int users, int sent) {
+    /// `artists`는 am에서 조회한 아티스트 수(pm은 0), `skipped`는 발송하지 않은 이유, `log`는 발송한 회차의 이력.
+    /// 둘은 디스코드 리포트(`CronReport`)용이라 응답 JSON엔 안 싣는다.
+    public record RunResult(int artists, int saved, int newReleases, int releaseArtists, int users, int sent,
+                            @JsonIgnore String skipped, @JsonIgnore PushLog log) {
+    }
+
+    record Collected(int artists, int saved) {
     }
 
     public RunResult run(PushVariant.Slot slot) throws InterruptedException {
         Instant now = clock.instant();
         String kind = "new_release_" + slot.name().toLowerCase(Locale.ROOT);
         Instant since;
-        int saved = 0;
+        Collected collected = new Collected(0, 0);
         if (slot == PushVariant.Slot.AM) {
             since = now;
-            saved = collect(now);
+            collected = collect(now);
         } else {
             since = now.atZone(KST).toLocalDate().atStartOfDay(KST).toInstant();
             if (pushLogRepository.existsByKindAndSentAtGreaterThanEqual(kind, since)) {
                 log.info("[new-release] 오늘 pm 발송이 이미 있다 — 건너뛴다");
-                return new RunResult(0, 0, 0, 0);
+                return new RunResult(0, 0, 0, 0, 0, 0, "오늘 pm 발송이 이미 있다", null);
             }
         }
 
         List<Track> releases = newReleasesSince(since, clock.instant());
         Map<Long, List<Track>> byUser = bundle(releases, PushVariant.newReleaseGroup(slot));
+        int saved = collected.saved();
+        int releaseArtists = byArtist(releases).size();
         PushService push = pushService.getIfAvailable();
         if (push == null || !push.adEnabled() || byUser.isEmpty()) {
             log.info("[new-release] slot={} saved={} releases={} users={} — 발송 없음(push={}, ad={})",
                     slot, saved, releases.size(), byUser.size(), push != null, push != null && push.adEnabled());
-            return new RunResult(saved, releases.size(), byUser.size(), 0);
+            String skipped = push == null ? "푸시 꺼진 환경" : !push.adEnabled() ? "광고성 발송 꺼짐(PUSH_AD_ENABLED=false)"
+                    : releases.isEmpty() ? "신곡 없음" : "받을 유저 없음";
+            return new RunResult(collected.artists(), saved, releases.size(), releaseArtists, byUser.size(), 0, skipped, null);
         }
         PushLog record = push.begin(kind, "new_release", "신곡 알림(유저별 문구)", releases.size() + "곡");
         Map<Long, PushService.Alert> alerts = new HashMap<>();
         byUser.forEach((userId, tracks) -> alerts.put(userId, PushService.newReleaseAlert(tracks)));
         int sent = push.sendEach(record, alerts);
         log.info("[new-release] slot={} saved={} releases={} users={} sent={}", slot, saved, releases.size(), byUser.size(), sent);
-        return new RunResult(saved, releases.size(), byUser.size(), sent);
+        return new RunResult(collected.artists(), saved, releases.size(), releaseArtists, byUser.size(), sent, null, record);
     }
 
     /// 앱 피드 맨 앞에 붙일 신곡 — 좋아요한 아티스트가 최근 7일 안에 낸 곡 중 안 들은 곡, 아티스트 순.
@@ -112,17 +124,26 @@ public class NewReleaseService {
         Set<Long> seen = new HashSet<>(jdbcTemplate.queryForList(
                 "SELECT track_id FROM listened_tracks WHERE user_id = ? UNION SELECT track_id FROM users_hype_tracks WHERE user_id = ?",
                 Long.class, userId, userId));
-        return byArtist(newReleasesSince(now.minus(WINDOW), now)).entrySet().stream()
+        return capRandom(byArtist(newReleasesSince(now.minus(WINDOW), now)).entrySet().stream()
                 .filter(e -> artists.contains(e.getKey()))
                 .flatMap(e -> e.getValue().stream())
                 .map(Track::getId)
                 .filter(id -> !seen.contains(id))
-                .toList();
+                .collect(Collectors.toCollection(ArrayList::new)));
+    }
+
+    /// 피드 앞 신곡 구간 상한(설계서 「신곡 n/m」, m 최대 10). 넘으면 무작위 10곡, 안 넘으면 아티스트 순 그대로.
+    static final int FEED_MAX = 10;
+
+    static List<Long> capRandom(List<Long> ids) {
+        if (ids.size() <= FEED_MAX) return ids;
+        Collections.shuffle(ids);
+        return List.copyOf(ids.subList(0, FEED_MAX));
     }
 
     /// 좋아요 아티스트 전원의 최근 곡을 받아 발매 7일 이내만 저장한다. 저장 수를 돌려준다.
     /// 알림 미동의 유저의 아티스트도 받는다 — 곡은 피드 앞 표시에도 쓰인다.
-    int collect(Instant now) throws InterruptedException {
+    Collected collect(Instant now) throws InterruptedException {
         List<Long> artistIds = jdbcTemplate.queryForList(
                 "SELECT DISTINCT t.artist_id FROM users_hype_tracks uht JOIN tracks t ON t.track_id = uht.track_id "
                         + "WHERE t.artist_id IS NOT NULL ORDER BY t.artist_id", Long.class);
@@ -143,7 +164,7 @@ public class NewReleaseService {
             }
         }
         log.info("[new-release] artists={} saved={}", artistIds.size(), saved);
-        return saved;
+        return new Collected(artistIds.size(), saved);
     }
 
     /// 발매 7일 이내이고 이미 발매된 곡. 선주문(발매일이 미래)은 실제 발매 뒤에 잡힌다.

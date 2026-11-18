@@ -28,6 +28,7 @@ public enum ErrorCode {
     CRON_JOB_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "크론잡 processBatch 실행에 실패했습니다. (process result null 리턴)"),
     CRON_SECRET_INVALID(HttpStatus.UNAUTHORIZED, "유효하지 않은 크론잡 시크릿값입니다."),
     AD_PUSH_DISABLED(HttpStatus.CONFLICT, "광고성 푸시가 꺼져 있습니다(push.ad.enabled=false). 앱 동의 팝업이 나간 뒤에 켭니다."),
+    AD_PUSH_CONSENT_REQUIRED(HttpStatus.CONFLICT, "광고성 정보 수신에 먼저 동의해야 야간 수신을 켤 수 있습니다."),
     DEVICE_TOKEN_NOT_FOUND(HttpStatus.NOT_FOUND, "등록되지 않은 기기 토큰입니다."),
 
     // Auth domain

@@ -6,6 +6,8 @@ import com.rta.dignify.dto.hype.HypeListResponse;
 import com.rta.dignify.dto.stats.UserStatsResponse;
 import com.rta.dignify.dto.user.AdPushConsentRequest;
 import com.rta.dignify.dto.user.AdPushConsentResponse;
+import com.rta.dignify.dto.user.AdPushNightConsentRequest;
+import com.rta.dignify.dto.user.AdPushNightConsentResponse;
 import com.rta.dignify.dto.user.DiggingModeUpdateRequest;
 import com.rta.dignify.dto.user.NicknameUpdateRequest;
 import com.rta.dignify.dto.user.NicknameUpdateResponse;
@@ -66,6 +68,12 @@ public class UserController {
     @PutMapping("/me/push-consent")
     public AdPushConsentResponse changeAdPushConsent(@AuthenticationPrincipal Long userId, @RequestBody @Valid AdPushConsentRequest request) {
         return userService.changeAdPushConsent(userId, request.adPush());
+    }
+
+    /// 야간(21~08시) 광고성 동의. 광고성 동의가 false인데 켜면 409 AD_PUSH_CONSENT_REQUIRED.
+    @PutMapping("/me/push-consent/night")
+    public AdPushNightConsentResponse changeAdPushNightConsent(@AuthenticationPrincipal Long userId, @RequestBody @Valid AdPushNightConsentRequest request) {
+        return userService.changeAdPushNightConsent(userId, request.nightPush());
     }
 
     /// 추천 기준 곡 고정. 빈 배열이 해제다.

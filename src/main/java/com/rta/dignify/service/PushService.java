@@ -48,7 +48,7 @@ import java.util.concurrent.TimeoutException;
 public class PushService {
     /// 발송 허용 시간대(기기 로컬 기준). 밖이면 건너뛴다.
     static final int AWAKE_FROM = 9, AWAKE_UNTIL = 22;
-    /// 광고성 타입은 21시에 끊는다. 야간(21~08시) 발송은 별도 야간 동의가 필요한데 그건 받지 않는다(제50조 3항).
+    /// 광고성 타입은 21시에 끊는다. 야간(21~08시) 발송은 야간 동의가 있어야 한다(제50조 3항).
     static final int AD_AWAKE_UNTIL = 21;
     /// 광고성 정보로 운영하는 타입(2026-10-28 확정). 동의 필터·`(광고)` 접두어·수신거부 카테고리·21시 컷이
     /// 전부 이 집합 하나로 갈린다. `pick_reaction`은 활동 알림이라 밖이다 — 문구에 홍보를 섞는 순간 안으로 와야 한다.
@@ -225,7 +225,8 @@ public class PushService {
         List<CompletableFuture<Void>> results = new ArrayList<>();
         for (UserDeviceToken t : targets) {
             if (!meetsMinBuild(t.getAppBuild(), minBuild) || ad && !meetsAdMinBuild(t)) { record.skippedBuild(); continue; }
-            if (userId == null && !force && !isAwakeHour(t.getTimeZone(), Instant.now(), ad ? AD_AWAKE_UNTIL : AWAKE_UNTIL)) { record.skippedQuiet(); continue; }
+            // 광고성은 force로도 야간 컷을 못 넘는다(제50조 3항) — force는 공지용이다.
+            if (userId == null && (ad || !force) && !isAwakeHour(t.getTimeZone(), Instant.now(), ad ? adUntil(t) : AWAKE_UNTIL)) { record.skippedQuiet(); continue; }
             results.add(send(t, alert, record));
         }
         await(results);
@@ -251,12 +252,23 @@ public class PushService {
         List<CompletableFuture<Void>> results = new ArrayList<>();
         for (UserDeviceToken t : targets) {
             if (!meetsAdMinBuild(t)) { record.skippedBuild(); continue; }
-            if (!isAwakeHour(t.getTimeZone(), Instant.now(), AD_AWAKE_UNTIL)) { record.skippedQuiet(); continue; }
+            if (!isAwakeHour(t.getTimeZone(), Instant.now(), adUntil(t))) { record.skippedQuiet(); continue; }
             results.add(send(t, byUser.get(t.getUser().getId()).withPushId(record.getPushId()), record));
         }
         await(results);
         save(record);
         return results.size();
+    }
+
+    private static int adUntil(UserDeviceToken t) {
+        return adUntil(t.getUser().getAdPushNightConsent());
+    }
+
+    /// 야간 동의자는 일반 알림과 같은 22시까지(21시대 큐레이션 슬롯이 닿는다), 나머지는 21시까지.
+    /// 미동의자는 미루지 않고 건너뛴다(skippedQuiet).
+    // ponytail: 야간 동의자도 22~09시는 안 보낸다 — 새벽 광고는 동의가 있어도 해지를 부른다. 실제로 필요해지면 여기만 넓힌다.
+    static int adUntil(Boolean nightConsent) {
+        return Boolean.TRUE.equals(nightConsent) ? AWAKE_UNTIL : AD_AWAKE_UNTIL;
     }
 
     private void requireAdEnabled() {

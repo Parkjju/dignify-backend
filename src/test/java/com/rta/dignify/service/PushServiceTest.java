@@ -179,4 +179,23 @@ class PushServiceTest {
         assertThat(com.rta.dignify.domain.PushVariant.newReleaseGroup(am)).isEqualTo(com.rta.dignify.domain.PushVariant.A);
         assertThat(com.rta.dignify.domain.PushVariant.weeklyPickGroup(am)).isEqualTo(com.rta.dignify.domain.PushVariant.B);
     }
+
+    @Test
+    @DisplayName("야간 동의자만 광고성이 21시대에 나간다 — 미응답·거부는 21시 컷")
+    void adNightConsent() {
+        Instant seoul2130 = Instant.parse("2026-07-28T12:30:00Z");
+        assertThat(PushService.isAwakeHour("Asia/Seoul", seoul2130, PushService.adUntil(true))).isTrue();
+        assertThat(PushService.isAwakeHour("Asia/Seoul", seoul2130, PushService.adUntil(false))).isFalse();
+        assertThat(PushService.isAwakeHour("Asia/Seoul", seoul2130, PushService.adUntil(null))).isFalse();
+    }
+
+    @Test
+    @DisplayName("피드 앞 신곡은 10곡 상한 — 넘으면 무작위 10곡, 안 넘으면 순서 그대로")
+    void newReleaseFeedCap() {
+        var few = new java.util.ArrayList<>(java.util.List.of(3L, 1L, 2L));
+        assertThat(NewReleaseService.capRandom(few)).containsExactly(3L, 1L, 2L);
+        var many = new java.util.ArrayList<Long>();
+        for (long i = 0; i < 15; i++) many.add(i);
+        assertThat(NewReleaseService.capRandom(many)).hasSize(10).doesNotHaveDuplicates();
+    }
 }

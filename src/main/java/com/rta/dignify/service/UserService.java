@@ -15,6 +15,7 @@ import com.rta.dignify.repository.GenreRepository;
 import com.rta.dignify.dto.user.DiggingModeUpdateRequest;
 import com.rta.dignify.dto.user.SeedTracksUpdateRequest;
 import com.rta.dignify.dto.user.AdPushConsentResponse;
+import com.rta.dignify.dto.user.AdPushNightConsentResponse;
 import com.rta.dignify.repository.UserDeviceTokenRepository;
 import com.rta.dignify.repository.UserGenreRepository;
 import com.rta.dignify.repository.UserHypeTrackRepository;
@@ -42,7 +43,8 @@ public class UserService {
         List<GenreResponse> genreList = userGenreRepository.findUserGenresByUserId(userId).stream().map((genre) -> GenreResponse.from(genre.getGenre())).toList();
 
         return new UserProfileResponse(user.getNickname(), user.getIsOnboardingComplete(), genreList,
-                Boolean.TRUE.equals(user.getDiggingMode()), Boolean.TRUE.equals(user.getAdPushConsent()));
+                Boolean.TRUE.equals(user.getDiggingMode()), Boolean.TRUE.equals(user.getAdPushConsent()),
+                user.getAdPushConsentAt(), user.getAdPushNightConsent(), user.getAdPushNightConsentAt());
     }
 
     @Transactional
@@ -76,6 +78,15 @@ public class UserService {
         User user = userRepository.findById(userId).orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
         user.changeAdPushConsent(consent, clock.instant());
         return new AdPushConsentResponse(consent, user.getAdPushConsentAt());
+    }
+
+    /// 야간 광고성 동의·거부. 광고성 동의 없이 켜는 건 막는다 — 앱은 「먼저 동의해야 해요」 토스트를 띄운다.
+    @Transactional
+    public AdPushNightConsentResponse changeAdPushNightConsent(Long userId, boolean consent) {
+        User user = userRepository.findById(userId).orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        if (consent && !Boolean.TRUE.equals(user.getAdPushConsent())) throw new BusinessException(ErrorCode.AD_PUSH_CONSENT_REQUIRED);
+        user.changeAdPushNightConsent(consent, clock.instant());
+        return new AdPushNightConsentResponse(consent, user.getAdPushNightConsentAt());
     }
 
     /// 알림의 「수신거부」 버튼. 로그인 없이 기기 토큰만으로 그 기기 주인의 동의를 거둔다 —

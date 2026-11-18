@@ -6,11 +6,15 @@ import com.rta.dignify.global.security.InternalSecrets;
 import com.rta.dignify.service.NewReleaseService;
 import com.rta.dignify.service.WeeklyPickService;
 import com.rta.dignify.service.cron.CronBatchService;
+import com.rta.dignify.service.cron.CronReport;
 import com.rta.dignify.service.cron.CronService;
 import com.rta.dignify.service.cron.KoEnrichmentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.time.Duration;
+import java.time.Instant;
 
 /// 두 종류가 섞여 있다. collect/enrich-ko는 몇 시간 도는 배치라 로컬 스크립트만 부르고(크론 시크릿),
 /// collect-artist류는 어드민 화면의 [수집] 버튼도 부른다(어드민 시크릿).
@@ -73,13 +77,13 @@ public class CronController {
         internalSecrets.verifyCron(requestSecret);
         PushVariant.Slot s = PushVariant.Slot.parse(slot);
 
+        Instant startedAt = Instant.now();
         try {
             NewReleaseService.RunResult r = newReleaseService.run(s);
-            discordNotifier.notify("🆕 신곡 알림 " + slot + " — 저장 " + r.saved() + "곡 · 신곡 " + r.newReleases()
-                    + "곡 · 대상 " + r.users() + "명 · 발송 " + r.sent() + "명");
+            discordNotifier.notify(CronReport.newRelease(s, r, startedAt, Duration.between(startedAt, Instant.now())));
             return ResponseEntity.ok(r);
         } catch (RuntimeException | InterruptedException e) {
-            discordNotifier.notify("❌ 신곡 알림 " + slot + " 실패: " + e.getMessage());
+            discordNotifier.notify(CronReport.failed("신곡 알림", slot, e));
             throw e;
         }
     }
@@ -92,13 +96,13 @@ public class CronController {
         internalSecrets.verifyCron(requestSecret);
         PushVariant.Slot s = PushVariant.Slot.parse(slot);
 
+        Instant startedAt = Instant.now();
         try {
             WeeklyPickService.RunResult r = weeklyPickService.run(s);
-            discordNotifier.notify("📅 주간 추천 " + slot + " — 대상 " + r.targets() + "명 · 추천 생성 " + r.picked()
-                    + "명 · 발송 " + r.sent() + "명");
+            discordNotifier.notify(CronReport.weeklyPick(s, r, startedAt, Duration.between(startedAt, Instant.now())));
             return ResponseEntity.ok(r);
         } catch (RuntimeException e) {
-            discordNotifier.notify("❌ 주간 추천 " + slot + " 실패: " + e.getMessage());
+            discordNotifier.notify(CronReport.failed("주간 추천", slot, e));
             throw e;
         }
     }

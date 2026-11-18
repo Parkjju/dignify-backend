@@ -52,6 +52,13 @@ public class User extends BaseTimeEntity {
     @Column(name = "ad_push_consent_at")
     private Instant adPushConsentAt;
 
+    /// 야간(21~08시) 광고성 알림 수신 동의(제50조 3항). null = 미응답 — 앱의 야간 동의 팝업 조건이다.
+    @Column(name = "ad_push_night_consent")
+    private Boolean adPushNightConsent;
+
+    @Column(name = "ad_push_night_consent_at")
+    private Instant adPushNightConsentAt;
+
     /// 무드 피드 진행 위치. null이면 처음부터다(게스트·시드 없는 유저는 안 쓴다).
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "feed_state")
@@ -85,6 +92,13 @@ public class User extends BaseTimeEntity {
     public void changeAdPushConsent(boolean consent, Instant now) {
         this.adPushConsent = consent;
         this.adPushConsentAt = now;
+        // 광고성을 끄면 야간도 꺼진다. 미응답(null)은 그대로 둬야 다시 동의했을 때 야간 팝업이 뜬다.
+        if (!consent && Boolean.TRUE.equals(adPushNightConsent)) changeAdPushNightConsent(false, now);
+    }
+
+    public void changeAdPushNightConsent(boolean consent, Instant now) {
+        this.adPushNightConsent = consent;
+        this.adPushNightConsentAt = now;
     }
 
     public void updateFeedState(FeedState feedState) {

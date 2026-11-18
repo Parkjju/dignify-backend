@@ -1,5 +1,6 @@
 package com.rta.dignify.service;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.rta.dignify.domain.PushLog;
 import com.rta.dignify.domain.PushVariant;
 import com.rta.dignify.domain.Track;
@@ -53,7 +54,9 @@ public class WeeklyPickService {
     private final ObjectProvider<PushService> pushService;
     private final Clock clock;
 
-    public record RunResult(int targets, int picked, int sent) {
+    /// `skipped`·`log`는 디스코드 리포트(`CronReport`)용이라 응답 JSON엔 안 싣는다.
+    public record RunResult(LocalDate weekStart, int targets, int picked, int sent,
+                            @JsonIgnore String skipped, @JsonIgnore PushLog log) {
     }
 
     public RunResult run(PushVariant.Slot slot) {
@@ -62,9 +65,14 @@ public class WeeklyPickService {
             // 발송 없이 기록만 남기면 그 주를 소진한다. 푸시가 없는 환경에선 아예 돌지 않는다.
             throw new BusinessException(ErrorCode.AD_PUSH_DISABLED);
         }
-        PushLog record = push.begin("weekly_pick", "weekly_pick", PushService.WEEKLY_PICK_TITLE, "「기준 곡」(유저별)");
         LocalDate weekStart = LocalDate.now(clock.withZone(KST)).with(DayOfWeek.MONDAY);
         List<Long> targets = targets(PushVariant.weeklyPickGroup(slot));
+        if (!push.adEnabled()) {
+            // 추천을 만들면 그 주를 소진한다. 꺼진 동안엔 대상 수만 센다.
+            log.info("[weekly-pick] slot={} week={} targets={} — 발송 없음(ad=false)", slot, weekStart, targets.size());
+            return new RunResult(weekStart, targets.size(), 0, 0, "광고성 발송 꺼짐(PUSH_AD_ENABLED=false)", null);
+        }
+        PushLog record = push.begin("weekly_pick", "weekly_pick", PushService.WEEKLY_PICK_TITLE, "「기준 곡」(유저별)");
 
         Map<Long, PushService.Alert> alerts = new HashMap<>();
         for (Long userId : targets) {
@@ -73,7 +81,10 @@ public class WeeklyPickService {
         }
         int sent = push.sendEach(record, alerts);
         log.info("[weekly-pick] slot={} week={} targets={} picked={} sent={}", slot, weekStart, targets.size(), alerts.size(), sent);
-        return new RunResult(targets.size(), alerts.size(), sent);
+        if (alerts.isEmpty()) {
+            return new RunResult(weekStart, targets.size(), 0, 0, targets.isEmpty() ? "받을 유저 없음" : "추천을 만든 유저 없음", null);
+        }
+        return new RunResult(weekStart, targets.size(), alerts.size(), sent, null, record);
     }
 
     /// 좋아요 4곡 이상 + 광고성 동의 + 이 그룹. 3곡 이하는 대기(다음 발송일에 다시 본다).
