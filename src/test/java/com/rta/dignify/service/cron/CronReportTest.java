@@ -62,7 +62,7 @@ class CronReportTest {
 
     /// 후보 11 = 구버전 1 + 야간 1 + 시도 9, 시도 9 = 수락 8 + 실패 1.
     private static PushLog sampleLog() {
-        PushLog log = PushLog.start("new_release_am", "new_release", "(광고) 신곡", "샘플", null, null, false);
+        PushLog log = PushLog.start("new_release_am", "new_release", "신곡", "(광고) 샘플", null, null, false);
         log.candidates(11);
         log.skippedBuild();
         log.skippedQuiet();

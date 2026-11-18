@@ -104,14 +104,16 @@ public class PushService {
     ///
     /// `pushId`는 발송 이력(`PushLog`)과 열람 이벤트를 잇는 키다. 구버전 앱은 모르는 키라 무시한다.
     ///
-    /// 광고성 타입이면 제목 앞에 `(광고)`를 **여기서** 붙인다. 문구마다 넣으면 언젠가 빠뜨린다.
-    /// loc-key 제목엔 붙일 수 없다(기기가 렌더한다) — 광고성 문구는 원문으로만 보낸다.
+    /// 광고성 타입이면 **본문** 앞에 `(광고)`를 **여기서** 붙인다. 문구마다 넣으면 언젠가 빠뜨린다.
+    /// 제목엔 안 붙인다(2026-11-18 결정): 앱 푸시는 배너 하나에 제목·본문이 같이 떠서 본문 시작이 「광고가 시작되는 부분」이라는 해석.
+    /// KISA 안내서(2025.12) 43쪽 문언은 「제목과 본문 모두」라 보수적 해석과는 다르다 — 규제 해석이 바뀌면 여기서 제목에도 붙인다.
+    /// loc-key 본문엔 붙일 수 없다(기기가 렌더한다) — 광고성 문구는 원문으로만 보낸다.
     ///
     /// `trackIds`는 탭했을 때 피드 앞에 붙일 곡(신곡·주간 추천). 없으면 null.
     record Alert(Line title, Line body, String type, String pushId, List<Long> trackIds) {
         Alert {
-            if (isAd(type) && title.text() != null && !title.text().startsWith(AD_PREFIX)) {
-                title = Line.raw(AD_PREFIX + title.text());
+            if (isAd(type) && body.text() != null && !body.text().startsWith(AD_PREFIX)) {
+                body = Line.raw(AD_PREFIX + body.text());
             }
         }
 
@@ -239,7 +241,7 @@ public class PushService {
     /// `sendEach`로 보낸다(주간 추천은 `weekly_picks.push_id`).
     public PushLog begin(String kind, String type, String title, String body) {
         requireAdEnabled();
-        return PushLog.start(kind, type, AD_PREFIX + title, body, null, null, false);
+        return PushLog.start(kind, type, title, AD_PREFIX + body, null, null, false);
     }
 
     /// 유저별 알림을 그 유저의 모든 기기로. 광고성 규칙(동의·빌드·21시)은 `broadcast`와 같다.

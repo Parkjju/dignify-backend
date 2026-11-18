@@ -138,17 +138,17 @@ class PushServiceTest {
     }
 
     @Test
-    @DisplayName("광고성 타입은 제목에 (광고)가 한 번만 붙고, 활동·공지 알림엔 안 붙는다")
+    @DisplayName("광고성 타입은 본문 앞에 (광고)가 한 번만 붙고 제목엔 안 붙는다, 활동·공지 알림엔 안 붙는다")
     void adPrefix() {
         PushService.Alert alert = PushService.weeklyPickAlert("Happier", java.util.List.of(1L, 2L));
-        assertThat(alert.title().text()).isEqualTo("(광고) 이번 주 추천 5곡");
-        assertThat(alert.withPushId("p").title().text()).isEqualTo("(광고) 이번 주 추천 5곡");
-        assertThat(alert.body().text()).contains("「Happier」");
+        assertThat(alert.title().text()).isEqualTo("이번 주 추천 5곡");
+        assertThat(alert.body().text()).startsWith("(광고) 「Happier」");
+        assertThat(alert.withPushId("p").body().text()).startsWith("(광고) 「Happier」").doesNotContain("(광고) (광고)");
 
-        assertThat(new PushService.Alert(PushService.Line.raw("새 기능"), PushService.Line.raw("b"), "curation").title().text())
-                .isEqualTo("(광고) 새 기능");
-        assertThat(new PushService.Alert(PushService.Line.raw("새 기능"), PushService.Line.raw("b"), "notice").title().text())
-                .isEqualTo("새 기능");
+        assertThat(new PushService.Alert(PushService.Line.raw("새 기능"), PushService.Line.raw("b"), "curation").body().text())
+                .isEqualTo("(광고) b");
+        assertThat(new PushService.Alert(PushService.Line.raw("새 기능"), PushService.Line.raw("b"), "notice").body().text())
+                .isEqualTo("b");
         assertThat(PushService.isAd("pick_reaction")).isFalse();
     }
 
